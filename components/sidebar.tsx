@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { LayoutDashboard, Users, Car, Settings, ChevronDown, X } from "lucide-react"
+import { LayoutDashboard, Users, Car, Settings, ChevronDown, X, LogIn, LogOut, FileText, Search } from "lucide-react"
 
 interface SidebarProps {
   isMobileMenuOpen: boolean
@@ -11,6 +11,7 @@ interface SidebarProps {
 
 export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps) {
   const [isSubmenuOpen, setIsSubmenuOpen] = useState(false)
+  const [isOperationsSubmenuOpen, setIsOperationsSubmenuOpen] = useState(false)
 
   return (
     <>
@@ -49,6 +50,69 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
                 <Link href="/" className="flex items-center rounded-xl px-4 py-3 text-sm font-medium hover:bg-gray-800">
                   <LayoutDashboard className="mr-3 h-5 w-5 text-gray-400" />
                   <span>Dashboard</span>
+                </Link>
+              </li>
+
+              <li>
+                <button
+                  onClick={() => setIsOperationsSubmenuOpen(!isOperationsSubmenuOpen)}
+                  className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-medium hover:bg-gray-800"
+                >
+                  <div className="flex items-center">
+                    <Car className="mr-3 h-5 w-5 text-gray-400" />
+                    <span>Operações</span>
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${isOperationsSubmenuOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                {isOperationsSubmenuOpen && (
+                  <ul className="mt-1 space-y-1 pl-11">
+                    <li>
+                      <Link
+                        href="/registro-entrada"
+                        className="block rounded-lg px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+                      >
+                        <div className="flex items-center">
+                          <LogIn className="mr-2 h-4 w-4" />
+                          <span>Registrar Entrada</span>
+                        </div>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/registro-saida"
+                        className="block rounded-lg px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+                      >
+                        <div className="flex items-center">
+                          <LogOut className="mr-2 h-4 w-4" />
+                          <span>Registrar Saída</span>
+                        </div>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/consulta"
+                        className="block rounded-lg px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+                      >
+                        <div className="flex items-center">
+                          <Search className="mr-2 h-4 w-4" />
+                          <span>Consultar Vagas</span>
+                        </div>
+                      </Link>
+                    </li>
+                  </ul>
+                )}
+              </li>
+
+              <li>
+                <Link
+                  href="/relatorios"
+                  className="flex items-center rounded-xl px-4 py-3 text-sm font-medium hover:bg-gray-800"
+                >
+                  <FileText className="mr-3 h-5 w-5 text-gray-400" />
+                  <span>Relatórios</span>
                 </Link>
               </li>
 

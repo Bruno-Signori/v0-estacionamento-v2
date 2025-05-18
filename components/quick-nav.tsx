@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Home, LogIn, LogOut, Search, FileText } from "lucide-react"
+import { Home, LogIn, LogOut, FileText } from "lucide-react"
 import { usePathname } from "next/navigation"
 
 export function QuickNav() {
@@ -30,13 +30,6 @@ export function QuickNav() {
         >
           <LogOut className="h-6 w-6" />
           <span className="text-xs mt-1">Saída</span>
-        </Link>
-        <Link
-          href="/consulta"
-          className={`flex flex-col items-center ${pathname === "/consulta" ? "text-yellow-500" : "text-gray-600 hover:text-yellow-500"}`}
-        >
-          <Search className="h-6 w-6" />
-          <span className="text-xs mt-1">Consulta</span>
         </Link>
         <Link
           href="/relatorios"

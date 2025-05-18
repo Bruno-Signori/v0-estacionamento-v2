@@ -1,4 +1,7 @@
 "use client"
+import { useState } from "react"
+import type React from "react"
+
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -26,6 +29,9 @@ interface VehicleFormProps {
 }
 
 export function VehicleForm({ onSubmit, isLoading }: VehicleFormProps) {
+  // Estado local para armazenar o valor da placa
+  const [plateInput, setPlateInput] = useState("")
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -36,6 +42,20 @@ export function VehicleForm({ onSubmit, isLoading }: VehicleFormProps) {
 
   const handleSubmit = (values: z.infer<typeof formSchema>) => {
     onSubmit(values.plate, values.vehicleType)
+  }
+
+  // Função para lidar com a mudança no input da placa
+  const handlePlateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Converter para maiúsculas
+    const upperCaseValue = e.target.value.toUpperCase()
+    // Atualizar o estado local
+    setPlateInput(upperCaseValue)
+    // Atualizar o valor no formulário
+    form.setValue("plate", upperCaseValue, {
+      shouldValidate: true,
+      shouldDirty: true,
+      shouldTouch: true,
+    })
   }
 
   return (
@@ -49,13 +69,13 @@ export function VehicleForm({ onSubmit, isLoading }: VehicleFormProps) {
               <FormLabel className="text-gray-900">Placa do Veículo</FormLabel>
               <FormControl>
                 <Input
-                  {...field}
                   placeholder="ABC1234"
                   className="rounded-xl border-gray-300 focus:border-yellow-500 focus:ring-yellow-500"
-                  onChange={(e) => {
-                    // Converter para maiúsculas automaticamente
-                    field.onChange(e.target.value.toUpperCase())
-                  }}
+                  value={plateInput}
+                  onChange={handlePlateChange}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
                 />
               </FormControl>
               <FormMessage />

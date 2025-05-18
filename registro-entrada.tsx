@@ -24,9 +24,9 @@ export default function RegistroEntrada() {
     // Simulando um tempo de processamento
     setTimeout(() => {
       // Gerar um número de ticket sequencial (em produção, isso viria do backend)
-      const ticketNumber = `T${Math.floor(Math.random() * 100)
+      const ticketNumber = Math.floor(Math.random() * 10000)
         .toString()
-        .padStart(2, "0")}`
+        .padStart(4, "0")
 
       setTicketData({
         ticketNumber,

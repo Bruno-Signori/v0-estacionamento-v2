@@ -14,7 +14,7 @@ export function DashboardCards() {
 
       <ActionCard
         title="Registrar Saída"
-        description="Finalize o período de um veículo"
+        description="Finalize o período de um veículo (manual ou QR Code)"
         icon={<LogOut className="h-6 w-6" />}
         color="bg-green-500"
       />

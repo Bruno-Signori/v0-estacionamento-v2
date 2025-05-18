@@ -1,4 +1,7 @@
 "use client"
+import { useState } from "react"
+import type React from "react"
+
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -10,7 +13,7 @@ import { Search, AlertCircle } from "lucide-react"
 
 // Definindo o esquema de validação
 const formSchema = z.object({
-  searchTerm: z.string().min(3, "Digite pelo menos 3 caracteres").max(10, "Digite no máximo 10 caracteres"),
+  searchTerm: z.string().min(2, "Digite pelo menos 2 caracteres").max(10, "Digite no máximo 10 caracteres"),
 })
 
 interface SearchVehicleFormProps {
@@ -19,6 +22,9 @@ interface SearchVehicleFormProps {
 }
 
 export function SearchVehicleForm({ onSearch, searchStatus }: SearchVehicleFormProps) {
+  // Estado local para armazenar o termo de busca
+  const [searchInput, setSearchInput] = useState("")
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -28,6 +34,20 @@ export function SearchVehicleForm({ onSearch, searchStatus }: SearchVehicleFormP
 
   const handleSubmit = (values: z.infer<typeof formSchema>) => {
     onSearch(values.searchTerm)
+  }
+
+  // Função para lidar com a mudança no input de busca
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Converter para maiúsculas
+    const upperCaseValue = e.target.value.toUpperCase()
+    // Atualizar o estado local
+    setSearchInput(upperCaseValue)
+    // Atualizar o valor no formulário
+    form.setValue("searchTerm", upperCaseValue, {
+      shouldValidate: true,
+      shouldDirty: true,
+      shouldTouch: true,
+    })
   }
 
   const isSearching = searchStatus === "searching"
@@ -44,14 +64,14 @@ export function SearchVehicleForm({ onSearch, searchStatus }: SearchVehicleFormP
               <FormLabel className="text-gray-900">Placa do Veículo ou Número do Ticket</FormLabel>
               <FormControl>
                 <Input
-                  {...field}
-                  placeholder="ABC1234 ou T01"
+                  placeholder="ABC1234 ou 1234"
                   className="rounded-xl border-gray-300 focus:border-yellow-500 focus:ring-yellow-500"
-                  onChange={(e) => {
-                    // Converter para maiúsculas automaticamente
-                    field.onChange(e.target.value.toUpperCase())
-                  }}
                   disabled={isSearching}
+                  value={searchInput}
+                  onChange={handleSearchChange}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
                 />
               </FormControl>
               <FormMessage />

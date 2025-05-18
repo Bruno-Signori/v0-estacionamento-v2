@@ -28,7 +28,7 @@ export function TicketDisplay({ ticketData }: TicketDisplayProps) {
   const vehicleTypeMap: Record<string, string> = {
     carro: "Carro",
     moto: "Moto",
-    camionete: "Camionete",
+    camionete: "Caminhonete",
   }
 
   // Gerando o conteúdo do QR Code
