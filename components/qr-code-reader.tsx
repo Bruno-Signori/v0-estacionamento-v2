@@ -29,8 +29,10 @@ export function QrCodeReader({ onScan }: QrCodeReaderProps) {
     try {
       const devices = await Html5Qrcode.getCameras()
       if (devices && devices.length) {
+        // Priorizar a câmera traseira
+        const backCamera = devices.find((device) => device.label.toLowerCase().includes("back"))
         setCameras(devices)
-        setSelectedCamera(devices[0].id)
+        setSelectedCamera(backCamera ? backCamera.id : devices[0].id) // Selecionar traseira ou a primeira disponível
         return true
       } else {
         setError("Nenhuma câmera encontrada no dispositivo")
@@ -83,29 +85,27 @@ export function QrCodeReader({ onScan }: QrCodeReaderProps) {
       setError("Scanner não inicializado ou câmera não selecionada")
       return
     }
-
+  
     setError(null)
     setScanning(true)
     setCameraActive(true)
-
+  
     try {
       await scannerRef.current.start(
-        selectedCamera,
+        selectedCamera, // Usar a câmera selecionada
         {
           fps: 10,
           qrbox: { width: 250, height: 250 },
           aspectRatio: 1.0,
         },
         (decodedText) => {
-          // QR Code detectado com sucesso
           handleQrCodeDetected(decodedText)
         },
         (errorMessage) => {
-          // Ignoramos erros durante o scanning para não interromper o processo
           console.log(errorMessage)
         },
       )
-
+  
       setPermissionGranted(true)
     } catch (err) {
       console.error("Erro ao iniciar o scanner:", err)
