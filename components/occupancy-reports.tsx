@@ -17,6 +17,7 @@ import {
   Cell,
   Legend,
 } from "recharts"
+
 import { Clock, Users, Timer } from "lucide-react"
 
 interface OccupancyReportsProps {
