@@ -1,17 +1,25 @@
 import { createClient } from "@supabase/supabase-js"
+import type { Database } from "@/types/supabase"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Criar cliente Supabase para o servidor
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
 
-// Cliente Supabase para uso geral
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+  },
+})
 
-// Cliente Supabase para o lado do cliente (browser)
-let clientSupabase: ReturnType<typeof createClient> | null = null
+// Cliente para o navegador (singleton)
+let browserSupabase: ReturnType<typeof createClient<Database>> | null = null
 
-export const getClientSupabase = () => {
-  if (!clientSupabase && typeof window !== "undefined") {
-    clientSupabase = createClient(supabaseUrl, supabaseAnonKey)
-  }
-  return clientSupabase || supabase
+export function getSupabaseBrowser() {
+  if (browserSupabase) return browserSupabase
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+
+  browserSupabase = createClient<Database>(supabaseUrl, supabaseKey)
+  return browserSupabase
 }

@@ -1,65 +1,72 @@
 import { supabase } from "../supabase"
-import type { HistoricoOperacao } from "@/types/supabase"
 
+// Registrar operação no histórico
 export async function registrarHistorico(
   tipoOperacao: string,
   idTicket: number | null = null,
   idUsuario: number | null = null,
-  detalhes: any = null,
-): Promise<HistoricoOperacao | null> {
+  detalhes: any = {},
+): Promise<void> {
   try {
-    const novoHistorico: Omit<HistoricoOperacao, "id" | "dt_operacao"> = {
+    await supabase.from("historico_operacao").insert({
       tp_operacao: tipoOperacao,
       id_ticket: idTicket,
       id_usuario: idUsuario,
       ds_detalhes: detalhes,
-    }
-
-    const { data, error } = await supabase.from("historico_operacao").insert(novoHistorico).select().single()
-
-    if (error) {
-      console.error("Erro ao registrar histórico:", error)
-      return null
-    }
-
-    return data
+    })
   } catch (error) {
     console.error("Erro ao registrar histórico:", error)
-    return null
+    // Não lançar erro para não interromper o fluxo principal
   }
 }
 
-export async function buscarHistorico(
-  tipoOperacao?: string,
-  dataInicio?: Date,
-  dataFim?: Date,
-  limite = 100,
-): Promise<HistoricoOperacao[]> {
+// Buscar histórico de operações
+export async function buscarHistoricoOperacoes(limite = 20): Promise<any[]> {
   try {
-    let query = supabase.from("historico_operacao").select("*").order("dt_operacao", { ascending: false }).limit(limite)
-
-    if (tipoOperacao) {
-      query = query.eq("tp_operacao", tipoOperacao)
-    }
-
-    if (dataInicio) {
-      query = query.gte("dt_operacao", dataInicio.toISOString())
-    }
-
-    if (dataFim) {
-      query = query.lte("dt_operacao", dataFim.toISOString())
-    }
-
-    const { data, error } = await query
+    const { data, error } = await supabase
+      .from("historico_operacao")
+      .select(`
+        *,
+        ticket (*),
+        usuario (*)
+      `)
+      .order("dt_criacao", { ascending: false })
+      .limit(limite)
 
     if (error) {
-      console.error("Erro ao buscar histórico:", error)
-      throw new Error("Falha ao buscar histórico")
+      console.error("Erro ao buscar histórico de operações:", error)
+      return []
     }
 
     return data || []
   } catch (error) {
-    console.error("Erro ao buscar histórico:", error)
-    throw error
+    console.error("Erro ao buscar histórico de operações:", error)
+    return []
+  }
+}
+
+// Buscar histórico por tipo de operação
+export async function buscarHistoricoPorTipo(tipoOperacao: string, limite = 20): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from("historico_operacao")
+      .select(`
+        *,
+        ticket (*),
+        usuario (*)
+      `)
+      .eq("tp_operacao", tipoOperacao)
+      .order("dt_criacao", { ascending: false })
+      .limit(limite)
+
+    if (error) {
+      console.error(`Erro ao buscar histórico de operações do tipo ${tipoOperacao}:`, error)
+      return []
+    }
+
+    return data || []
+  } catch (error) {
+    console.error(`Erro ao buscar histórico de operações do tipo ${tipoOperacao}:`, error)
+    return []
   }
 }
