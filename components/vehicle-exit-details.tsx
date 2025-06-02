@@ -4,17 +4,17 @@ import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Clock, Car, CreditCard, Banknote, Info, AlertCircle, Printer, CheckCircle } from "lucide-react"
-import type { VehicleInfo } from "../registro-saida"
-import type { PricingTable } from "../configuracoes"
+import type { Vehicle } from "@/lib/supabase/db/types"
+import type { PricingTable } from "@/lib/supabase/db/types"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { motion } from "framer-motion"
 
 interface VehicleExitDetailsProps {
-  vehicleInfo: VehicleInfo
+  vehicleInfo: Vehicle
   pricingTables: PricingTable[]
-  onFinishExit: (vehicleInfo: VehicleInfo) => void
+  onFinishExit: (vehicleInfo: Vehicle) => void
 }
 
 // Função para calcular o tempo de permanência em minutos
@@ -45,14 +45,14 @@ const formatParkingTime = (minutes: number): string => {
 // Função para encontrar a tabela de cobrança padrão
 const findDefaultPricingTable = (vehicleType: string, pricingTables: PricingTable[]): PricingTable | null => {
   // Primeiro, procurar pela tabela padrão para o tipo de veículo
-  const defaultTable = pricingTables.find((table) => table.vehicleType === vehicleType && table.isDefault)
+  const defaultTable = pricingTables.find((table) => table.tipo_veiculo?.nm_tipo === vehicleType && table.fl_padrao)
 
   if (defaultTable) {
     return defaultTable
   }
 
   // Se não encontrar uma tabela padrão, usar a primeira tabela para o tipo de veículo
-  const anyTable = pricingTables.find((table) => table.vehicleType === vehicleType)
+  const anyTable = pricingTables.find((table) => table.tipo_veiculo?.nm_tipo === vehicleType)
 
   return anyTable || null
 }
@@ -60,7 +60,7 @@ const findDefaultPricingTable = (vehicleType: string, pricingTables: PricingTabl
 // Função para calcular o valor a ser pago com base na tabela de cobrança
 const calculateAmountToPay = (parkingTimeMinutes: number, pricingTable: PricingTable): number => {
   // Verificar se está dentro do período de tolerância
-  if (parkingTimeMinutes <= pricingTable.toleranceMinutes) {
+  if (parkingTimeMinutes <= pricingTable.nr_tolerancia_minutos) {
     return 0
   }
 
@@ -69,13 +69,13 @@ const calculateAmountToPay = (parkingTimeMinutes: number, pricingTable: PricingT
 
   // Ordenar os períodos por duração (do menor para o maior)
   // Isso garante que aplicamos primeiro os períodos mais curtos
-  const sortedPeriods = [...pricingTable.periods].sort((a, b) => a.minutes - b.minutes)
+  const sortedPeriods = [...pricingTable.periodos].sort((a, b) => a.minutos - b.minutos)
 
   // Aplicar o primeiro período (geralmente a primeira hora)
   if (sortedPeriods.length > 0) {
     const firstPeriod = sortedPeriods[0]
-    totalAmount += firstPeriod.price
-    remainingMinutes -= firstPeriod.minutes
+    totalAmount += firstPeriod.preco
+    remainingMinutes -= firstPeriod.minutos
   }
 
   // Se ainda houver tempo restante e mais períodos, aplicar os períodos adicionais
@@ -84,13 +84,13 @@ const calculateAmountToPay = (parkingTimeMinutes: number, pricingTable: PricingT
     const additionalPeriod = sortedPeriods[sortedPeriods.length - 1]
 
     // Calcular quantas vezes o período adicional se aplica
-    const additionalPeriodCount = Math.ceil(remainingMinutes / additionalPeriod.minutes)
-    totalAmount += additionalPeriod.price * additionalPeriodCount
+    const additionalPeriodCount = Math.ceil(remainingMinutes / additionalPeriod.minutos)
+    totalAmount += additionalPeriod.preco * additionalPeriodCount
   }
 
   // Aplicar o valor máximo se configurado e se o total calculado for maior
-  if (pricingTable.maxValue > 0 && totalAmount > pricingTable.maxValue) {
-    return pricingTable.maxValue
+  if (pricingTable.vl_maximo > 0 && totalAmount > pricingTable.vl_maximo) {
+    return pricingTable.vl_maximo
   }
 
   return totalAmount
@@ -104,8 +104,8 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
 
   // Encontrar a tabela de cobrança padrão para pré-seleção
   const defaultPricingTable = useMemo(
-    () => findDefaultPricingTable(vehicleInfo.vehicleType, pricingTables),
-    [vehicleInfo.vehicleType, pricingTables],
+    () => findDefaultPricingTable(vehicleInfo.tipo_veiculo?.nm_tipo, pricingTables),
+    [vehicleInfo.tipo_veiculo?.nm_tipo, pricingTables],
   )
 
   // Definir a tabela padrão como selecionada inicialmente
@@ -122,7 +122,7 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
   )
 
   // Calculando o tempo de permanência
-  const parkingTimeMinutes = calculateParkingTime(vehicleInfo.entryTime)
+  const parkingTimeMinutes = calculateParkingTime(vehicleInfo.dt_entrada)
   const formattedParkingTime = formatParkingTime(parkingTimeMinutes)
 
   // Calculando o valor a ser pago
@@ -135,7 +135,7 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(vehicleInfo.entryTime)
+  }).format(vehicleInfo.dt_entrada)
 
   // Mapeando o tipo de veículo para o nome completo
   const vehicleTypeMap: Record<string, string> = {
@@ -150,12 +150,12 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
     setIsProcessing(true)
 
     // Preparando os dados atualizados do veículo
-    const updatedVehicleInfo: VehicleInfo = {
+    const updatedVehicleInfo: Vehicle = {
       ...vehicleInfo,
-      exitTime: new Date(),
-      parkingTime: parkingTimeMinutes,
-      amountToPay: amountToPay,
-      appliedPricingTable: selectedPricingTable || undefined,
+      dt_saida: new Date(),
+      nr_tempo_estacionado: parkingTimeMinutes,
+      vl_pagamento: amountToPay,
+      tabela_preco: selectedPricingTable || undefined,
     }
 
     // Simulando o processamento
@@ -176,11 +176,11 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
   }
 
   // Verificar se está dentro do período de tolerância
-  const isWithinTolerance = selectedPricingTable && parkingTimeMinutes <= selectedPricingTable.toleranceMinutes
+  const isWithinTolerance = selectedPricingTable && parkingTimeMinutes <= selectedPricingTable.nr_tolerancia_minutos
 
   // Verificar se atingiu o valor máximo
   const hasReachedMaxValue =
-    selectedPricingTable && selectedPricingTable.maxValue > 0 && amountToPay === selectedPricingTable.maxValue
+    selectedPricingTable && selectedPricingTable.vl_maximo > 0 && amountToPay === selectedPricingTable.vl_maximo
 
   // Filtrar tabelas relevantes (todas as tabelas, não apenas as do tipo do veículo)
   const availableTables = pricingTables
@@ -198,19 +198,19 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="text-sm text-gray-500">Ticket</div>
-                <div className="text-xl font-bold">{vehicleInfo.ticketNumber}</div>
+                <div className="text-xl font-bold">{vehicleInfo.nr_ticket}</div>
               </div>
 
               <div className="space-y-2">
                 <div className="text-sm text-gray-500">Placa</div>
-                <div className="text-xl font-bold">{vehicleInfo.plate}</div>
+                <div className="text-xl font-bold">{vehicleInfo.nm_placa}</div>
               </div>
 
               <div className="space-y-2">
                 <div className="text-sm text-gray-500">Tipo de Veículo</div>
                 <div className="flex items-center">
                   <Car className="mr-2 h-5 w-5 text-gray-600" />
-                  <span className="font-medium">{vehicleTypeMap[vehicleInfo.vehicleType]}</span>
+                  <span className="font-medium">{vehicleTypeMap[vehicleInfo.tipo_veiculo?.nm_tipo]}</span>
                 </div>
               </div>
 
@@ -236,8 +236,8 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
                   {availableTables.map((table) => (
                     <SelectItem key={table.id} value={table.id}>
                       <div className="flex items-center">
-                        <span>{table.name}</span>
-                        {table.isDefault && table.vehicleType === vehicleInfo.vehicleType && (
+                        <span>{table.nm_tabela}</span>
+                        {table.fl_padrao && table.tipo_veiculo?.nm_tipo === vehicleInfo.tipo_veiculo?.nm_tipo && (
                           <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full">
                             Padrão
                           </span>
@@ -256,18 +256,18 @@ export function VehicleExitDetails({ vehicleInfo, pricingTables, onFinishExit }:
                   <Info className="h-5 w-5 text-blue-500 mt-0.5 mr-2 flex-shrink-0" />
                   <div>
                     <h4 className="text-sm font-medium text-blue-800">Detalhes da Tabela</h4>
-                    <p className="text-sm text-blue-600 mt-1">{selectedPricingTable.description}</p>
+                    <p className="text-sm text-blue-600 mt-1">{selectedPricingTable.ds_tabela}</p>
 
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {selectedPricingTable.toleranceMinutes > 0 && (
+                      {selectedPricingTable.nr_tolerancia_minutos > 0 && (
                         <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                          Tolerância: {selectedPricingTable.toleranceMinutes} min
+                          Tolerância: {selectedPricingTable.nr_tolerancia_minutos} min
                         </span>
                       )}
 
-                      {selectedPricingTable.maxValue > 0 && (
+                      {selectedPricingTable.vl_maximo > 0 && (
                         <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                          Máximo: R$ {selectedPricingTable.maxValue.toFixed(2).replace(".", ",")}
+                          Máximo: R$ {selectedPricingTable.vl_maximo.toFixed(2).replace(".", ",")}
                         </span>
                       )}
                     </div>

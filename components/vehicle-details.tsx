@@ -5,14 +5,39 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Clock, Car, CreditCard, Banknote, Info, AlertCircle } from "lucide-react"
 import type { VehicleInfo } from "../registro-saida"
-import type { PricingTable } from "../configuracoes"
+import type { PricingTable as PricingTableType } from "../configuracoes"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 
+interface PricingTablePeriod {
+  id: number
+  nm_periodo: string
+  nr_minutos: number
+  vl_preco: number
+  nr_ordem: number
+}
+
+interface PricingTable {
+  id: number
+  nm_tabela: string
+  ds_descricao: string | null
+  id_tipo_veiculo: number
+  fl_padrao: boolean
+  nr_tolerancia_minutos: number
+  vl_maximo: number
+  fl_ativo: boolean
+  tipo_veiculo: {
+    id: number
+    nm_tipo: string
+    ds_descricao: string | null
+  }
+  periodos: PricingTablePeriod[]
+}
+
 interface VehicleDetailsProps {
   vehicleInfo: VehicleInfo
-  pricingTables: PricingTable[]
+  pricingTables: PricingTableType[]
   onFinishExit: (vehicleInfo: VehicleInfo) => void
 }
 
@@ -41,40 +66,28 @@ const formatParkingTime = (minutes: number): string => {
   }
 }
 
-// Função para encontrar a tabela de cobrança padrão
-const findDefaultPricingTable = (vehicleType: string, pricingTables: PricingTable[]): PricingTable | null => {
-  // Primeiro, procurar pela tabela padrão para o tipo de veículo
-  const defaultTable = pricingTables.find((table) => table.vehicleType === vehicleType && table.isDefault)
-
-  if (defaultTable) {
-    return defaultTable
+const calculateAmountToPay = (parkingTimeMinutes: number, pricingTable: PricingTableType): number => {
+  // Verificar se está dentro do período de tolerância
+  if (parkingTimeMinutes <= pricingTable.nr_tolerancia_minutos) {
+    return 0
   }
 
-  // Se não encontrar uma tabela padrão, usar a primeira tabela para o tipo de veículo
-  const anyTable = pricingTables.find((table) => table.vehicleType === vehicleType)
-
-  return anyTable || null
-}
-
-// Função para calcular o valor a ser pago com base na tabela de cobrança
-const calculateAmountToPay = (parkingTimeMinutes: number, pricingTable: PricingTable): number => {
-  // Verificar se está dentro do período de tolerância
-  if (parkingTimeMinutes <= pricingTable.toleranceMinutes) {
+  // Verificar se há períodos definidos
+  if (!pricingTable.periodos || pricingTable.periodos.length === 0) {
     return 0
   }
 
   let totalAmount = 0
   let remainingMinutes = parkingTimeMinutes
 
-  // Ordenar os períodos por duração (do menor para o maior)
-  // Isso garante que aplicamos primeiro os períodos mais curtos
-  const sortedPeriods = [...pricingTable.periods].sort((a, b) => a.minutes - b.minutes)
+  // Ordenar os períodos por ordem
+  const sortedPeriods = [...pricingTable.periodos].sort((a, b) => a.nr_ordem - b.nr_ordem)
 
   // Aplicar o primeiro período (geralmente a primeira hora)
   if (sortedPeriods.length > 0) {
     const firstPeriod = sortedPeriods[0]
-    totalAmount += firstPeriod.price
-    remainingMinutes -= firstPeriod.minutes
+    totalAmount += firstPeriod.vl_preco
+    remainingMinutes -= firstPeriod.nr_minutos
   }
 
   // Se ainda houver tempo restante e mais períodos, aplicar os períodos adicionais
@@ -83,16 +96,30 @@ const calculateAmountToPay = (parkingTimeMinutes: number, pricingTable: PricingT
     const additionalPeriod = sortedPeriods[sortedPeriods.length - 1]
 
     // Calcular quantas vezes o período adicional se aplica
-    const additionalPeriodCount = Math.ceil(remainingMinutes / additionalPeriod.minutes)
-    totalAmount += additionalPeriod.price * additionalPeriodCount
+    const additionalPeriodCount = Math.ceil(remainingMinutes / additionalPeriod.nr_minutos)
+    totalAmount += additionalPeriod.vl_preco * additionalPeriodCount
   }
 
   // Aplicar o valor máximo se configurado e se o total calculado for maior
-  if (pricingTable.maxValue > 0 && totalAmount > pricingTable.maxValue) {
-    return pricingTable.maxValue
+  if (pricingTable.vl_maximo > 0 && totalAmount > pricingTable.vl_maximo) {
+    return pricingTable.vl_maximo
   }
 
   return totalAmount
+}
+
+const findDefaultPricingTable = (vehicleType: string, pricingTables: PricingTableType[]): PricingTableType | null => {
+  // Primeiro, procurar pela tabela padrão para o tipo de veículo
+  const defaultTable = pricingTables.find((table) => table.tipo_veiculo.nm_tipo === vehicleType && table.fl_padrao)
+
+  if (defaultTable) {
+    return defaultTable
+  }
+
+  // Se não encontrar uma tabela padrão, usar a primeira tabela para o tipo de veículo
+  const anyTable = pricingTables.find((table) => table.tipo_veiculo.nm_tipo === vehicleType)
+
+  return anyTable || null
 }
 
 export function VehicleDetails({ vehicleInfo, pricingTables, onFinishExit }: VehicleDetailsProps) {
@@ -161,11 +188,11 @@ export function VehicleDetails({ vehicleInfo, pricingTables, onFinishExit }: Veh
   }
 
   // Verificar se está dentro do período de tolerância
-  const isWithinTolerance = selectedPricingTable && parkingTimeMinutes <= selectedPricingTable.toleranceMinutes
+  const isWithinTolerance = selectedPricingTable && parkingTimeMinutes <= selectedPricingTable.nr_tolerancia_minutos
 
   // Verificar se atingiu o valor máximo
   const hasReachedMaxValue =
-    selectedPricingTable && selectedPricingTable.maxValue > 0 && amountToPay === selectedPricingTable.maxValue
+    selectedPricingTable && selectedPricingTable.vl_maximo > 0 && amountToPay === selectedPricingTable.vl_maximo
 
   // Filtrar tabelas relevantes (todas as tabelas, não apenas as do tipo do veículo)
   const availableTables = pricingTables
@@ -220,8 +247,8 @@ export function VehicleDetails({ vehicleInfo, pricingTables, onFinishExit }: Veh
                 {availableTables.map((table) => (
                   <SelectItem key={table.id} value={table.id}>
                     <div className="flex items-center">
-                      <span>{table.name}</span>
-                      {table.isDefault && table.vehicleType === vehicleInfo.vehicleType && (
+                      <span>{table.nm_tabela}</span>
+                      {table.fl_padrao && table.tipo_veiculo.nm_tipo === vehicleInfo.vehicleType && (
                         <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded-full">
                           Padrão
                         </span>
@@ -240,18 +267,18 @@ export function VehicleDetails({ vehicleInfo, pricingTables, onFinishExit }: Veh
                 <Info className="h-5 w-5 text-blue-500 mt-0.5 mr-2 flex-shrink-0" />
                 <div>
                   <h4 className="text-sm font-medium text-blue-800">Detalhes da Tabela</h4>
-                  <p className="text-sm text-blue-600 mt-1">{selectedPricingTable.description}</p>
+                  <p className="text-sm text-blue-600 mt-1">{selectedPricingTable.ds_descricao}</p>
 
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedPricingTable.toleranceMinutes > 0 && (
+                    {selectedPricingTable.nr_tolerancia_minutos > 0 && (
                       <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                        Tolerância: {selectedPricingTable.toleranceMinutes} min
+                        Tolerância: {selectedPricingTable.nr_tolerancia_minutos} min
                       </span>
                     )}
 
-                    {selectedPricingTable.maxValue > 0 && (
+                    {selectedPricingTable.vl_maximo > 0 && (
                       <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                        Máximo: R$ {selectedPricingTable.maxValue.toFixed(2).replace(".", ",")}
+                        Máximo: R$ {selectedPricingTable.vl_maximo.toFixed(2).replace(".", ",")}
                       </span>
                     )}
                   </div>

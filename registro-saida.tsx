@@ -11,12 +11,10 @@ import { PaymentReceipt } from "./components/payment-receipt"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
-import type { PricingTable } from "./configuracoes"
-
-// Importando os dados iniciais das tabelas de cobrança
-import { initialPricingTables } from "./data/pricing-tables"
+import { supabase } from "./lib/supabase"
 
 export interface VehicleInfo {
+  id: number
   ticketNumber: string
   plate: string
   vehicleType: string
@@ -24,31 +22,94 @@ export interface VehicleInfo {
   exitTime?: Date
   parkingTime?: number // em minutos
   amountToPay?: number
-  appliedPricingTable?: PricingTable // Nova propriedade para armazenar a tabela aplicada
+  appliedPricingTable?: {
+    id: number
+    nm_tabela: string
+    ds_descricao: string | null
+    id_tipo_veiculo: number
+    fl_padrao: boolean
+    nr_tolerancia_minutos: number
+    vl_maximo: number
+    fl_ativo: boolean
+    tipo_veiculo: {
+      id: number
+      nm_tipo: string
+      ds_descricao: string | null
+    }
+    periodos: {
+      id: number
+      nm_periodo: string
+      nr_minutos: number
+      vl_preco: number
+      nr_ordem: number
+    }[]
+  }
 }
 
 export default function RegistroSaida() {
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "found" | "not-found">("idle")
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null)
   const [paymentComplete, setPaymentComplete] = useState(false)
-  const [pricingTables, setPricingTables] = useState<PricingTable[]>([])
+  const [pricingTables, setPricingTables] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<string>("manual")
   const [qrCodeData, setQrCodeData] = useState<string | null>(null)
   const [qrCodeError, setQrCodeError] = useState<string | null>(null)
 
-  // Carregar as tabelas de cobrança (em um sistema real, isso viria de uma API)
+  // Carregar as tabelas de cobrança
   useEffect(() => {
-    // Simulando o carregamento das tabelas de cobrança
-    setPricingTables(initialPricingTables)
+    loadPricingTables()
   }, [])
 
   // Efeito para processar dados do QR Code quando disponíveis
   useEffect(() => {
     if (qrCodeData) {
       processQrCodeData(qrCodeData)
-      setQrCodeData(null) // Limpar após processar
+      setQrCodeData(null)
     }
   }, [qrCodeData])
+
+  const loadPricingTables = async () => {
+    try {
+      const { data: tabelas, error: tabelasError } = await supabase
+        .from("tabela_preco")
+        .select(`
+          *,
+          tipo_veiculo (*)
+        `)
+        .eq("fl_ativo", true)
+        .order("nm_tabela")
+
+      if (tabelasError) {
+        console.error("Erro ao buscar tabelas de preço:", tabelasError)
+        return
+      }
+
+      // Buscar períodos para cada tabela
+      const tabelasCompletas: any[] = []
+
+      for (const tabela of tabelas) {
+        const { data: periodos, error: periodosError } = await supabase
+          .from("periodo_cobranca")
+          .select("*")
+          .eq("id_tabela_preco", tabela.id)
+          .order("nr_ordem")
+
+        if (periodosError) {
+          console.error(`Erro ao buscar períodos para tabela ${tabela.id}:`, periodosError)
+          continue
+        }
+
+        tabelasCompletas.push({
+          ...tabela,
+          periodos: periodos || [],
+        })
+      }
+
+      setPricingTables(tabelasCompletas)
+    } catch (error) {
+      console.error("Erro ao carregar tabelas de preço:", error)
+    }
+  }
 
   // Função para processar os dados do QR Code
   const processQrCodeData = (data: string) => {
@@ -59,11 +120,9 @@ export default function RegistroSaida() {
       try {
         const jsonData = JSON.parse(data)
         if (jsonData.ticket) {
-          // Se for um JSON válido com campo ticket, usar o ticket
           handleSearch(jsonData.ticket)
           return
         } else if (jsonData.plate) {
-          // Se tiver placa, usar a placa
           handleSearch(jsonData.plate)
           return
         }
@@ -72,7 +131,6 @@ export default function RegistroSaida() {
       }
 
       // Se não for JSON ou não tiver campos esperados, usar o texto diretamente
-      // Verificar se parece uma placa (pelo menos 7 caracteres) ou um número de ticket
       if (data.length >= 7 || !isNaN(Number(data))) {
         handleSearch(data)
       } else {
@@ -91,55 +149,113 @@ export default function RegistroSaida() {
     }
   }
 
-  const handleSearch = (searchTerm: string) => {
+  const handleSearch = async (searchTerm: string) => {
     setSearchStatus("searching")
 
-    // Simulando uma busca no banco de dados
-    setTimeout(() => {
-      // Verificando se o termo de busca é uma placa válida ou um número de ticket
-      if (searchTerm.length >= 7 || !isNaN(Number(searchTerm))) {
-        // Simulando que encontramos o veículo
-        const mockEntryTime = new Date()
-        mockEntryTime.setHours(mockEntryTime.getHours() - Math.floor(Math.random() * 5) - 1) // Entre 1-5 horas atrás
+    try {
+      // Verificar se o termo de busca é um número de ticket ou uma placa
+      const isNumeroTicket = /^T?\d+$/.test(searchTerm)
 
-        // Escolhendo aleatoriamente um tipo de veículo para simulação
-        const vehicleTypes = ["carro", "moto", "camionete"]
-        const randomVehicleType = vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)]
+      let query = supabase.from("ticket").select(`
+          *,
+          tipo_veiculo (*)
+        `)
 
-        // Gerar uma placa aleatória se o termo de busca parece ser um número de ticket
-        const plate = !isNaN(Number(searchTerm))
-          ? `ABC${Math.floor(Math.random() * 10000)
-              .toString()
-              .padStart(4, "0")}`
-          : searchTerm.toUpperCase()
-
-        // Gerar um número de ticket aleatório se o termo de busca parece ser uma placa
-        const ticketNumber = !isNaN(Number(searchTerm))
-          ? searchTerm
-          : Math.floor(Math.random() * 10000)
-              .toString()
-              .padStart(4, "0")
-
-        setVehicleInfo({
-          ticketNumber,
-          plate,
-          vehicleType: randomVehicleType,
-          entryTime: mockEntryTime,
-        })
-        setSearchStatus("found")
+      if (isNumeroTicket) {
+        // Remover 'T' se existir e buscar por número de ticket
+        const numeroLimpo = searchTerm.replace(/^T/, "")
+        query = query.or(`nr_ticket.eq.${searchTerm},nr_ticket.eq.T${numeroLimpo}`)
       } else {
-        setVehicleInfo(null)
-        setSearchStatus("not-found")
+        // Buscar por placa e apenas tickets sem saída registrada
+        query = query.eq("nr_placa", searchTerm.toUpperCase()).is("dt_saida", null)
       }
-    }, 1000)
+
+      const { data, error } = await query.order("dt_entrada", { ascending: false }).limit(1).maybeSingle()
+
+      if (error) {
+        console.error("Erro ao buscar ticket:", error)
+        setSearchStatus("not-found")
+        return
+      }
+
+      if (!data) {
+        setSearchStatus("not-found")
+        setVehicleInfo(null)
+        return
+      }
+
+      // Verificar se o ticket já tem saída registrada
+      if (data.dt_saida) {
+        setQrCodeError("Este ticket já teve a saída registrada.")
+        setSearchStatus("not-found")
+        return
+      }
+
+      setVehicleInfo({
+        id: data.id,
+        ticketNumber: data.nr_ticket,
+        plate: data.nr_placa,
+        vehicleType: data.tipo_veiculo.nm_tipo,
+        entryTime: new Date(data.dt_entrada),
+      })
+      setSearchStatus("found")
+    } catch (error) {
+      console.error("Erro ao buscar veículo:", error)
+      setSearchStatus("not-found")
+    }
   }
 
-  const handleFinishExit = (vehicleData: VehicleInfo) => {
-    // Simulando o processamento do pagamento
-    setTimeout(() => {
-      setVehicleInfo(vehicleData)
+  const handleFinishExit = async (vehicleData: VehicleInfo) => {
+    try {
+      if (!vehicleData.appliedPricingTable || vehicleData.amountToPay === undefined) {
+        throw new Error("Dados de cobrança não encontrados")
+      }
+
+      // Calcular tempo de permanência
+      const dtEntrada = vehicleData.entryTime
+      const dtSaida = new Date()
+      const tempoPermanencia = Math.floor((dtSaida.getTime() - dtEntrada.getTime()) / (1000 * 60))
+
+      // Atualizar ticket com informações de saída
+      const { error: atualizacaoError } = await supabase
+        .from("ticket")
+        .update({
+          dt_saida: dtSaida.toISOString(),
+          nr_tempo_permanencia: tempoPermanencia,
+          id_tabela_preco: vehicleData.appliedPricingTable.id,
+          vl_pago: vehicleData.amountToPay,
+          tp_pagamento: vehicleData.amountToPay > 0 ? "dinheiro" : null, // Será implementado seleção de pagamento
+          fl_pago: true,
+        })
+        .eq("id", vehicleData.id)
+
+      if (atualizacaoError) {
+        throw new Error("Falha ao registrar saída")
+      }
+
+      // Registrar no histórico
+      await supabase.from("historico_operacao").insert({
+        tp_operacao: "saida",
+        id_ticket: vehicleData.id,
+        ds_detalhes: {
+          placa: vehicleData.plate,
+          tempo_permanencia: tempoPermanencia,
+          valor_pago: vehicleData.amountToPay,
+          tipo_pagamento: vehicleData.amountToPay > 0 ? "dinheiro" : null,
+        },
+      })
+
+      // Atualizar dados do veículo com informações de saída
+      setVehicleInfo({
+        ...vehicleData,
+        exitTime: dtSaida,
+        parkingTime: tempoPermanencia,
+      })
       setPaymentComplete(true)
-    }, 1500)
+    } catch (error) {
+      console.error("Erro ao finalizar saída:", error)
+      alert("Erro ao finalizar saída. Tente novamente.")
+    }
   }
 
   const handleNewExit = () => {

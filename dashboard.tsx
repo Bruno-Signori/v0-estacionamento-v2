@@ -1,14 +1,204 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Sidebar } from "./components/sidebar"
 import { DashboardCards } from "./components/dashboard-cards"
 import { DashboardHeader } from "./components/dashboard-header"
 import { AppHeader } from "./components/app-header"
 import { QuickNav } from "./components/quick-nav"
+import { supabase } from "./lib/supabase"
+import type { TicketCompleto } from "./types/supabase"
+
+interface DashboardData {
+  totalEntradas: number
+  totalSaidas: number
+  veiculosAtivos: number
+  faturamentoDiario: number
+  ocupacaoAtual: {
+    total: number
+    ocupadas: number
+    disponiveis: number
+    percentual: number
+  }
+  tempoMedio: {
+    permanencia: number
+    ticketMedio: number
+  }
+  atividadesRecentes: TicketCompleto[]
+}
 
 export default function Dashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [])
+
+  const loadDashboardData = async () => {
+    try {
+      setIsLoading(true)
+
+      // Data de hoje
+      const hoje = new Date()
+      const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 0, 0, 0).toISOString()
+      const fimHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59).toISOString()
+
+      // Total de entradas do dia
+      const { count: totalEntradas } = await supabase
+        .from("ticket")
+        .select("id", { count: "exact", head: true })
+        .gte("dt_entrada", inicioHoje)
+        .lte("dt_entrada", fimHoje)
+
+      // Total de saídas do dia
+      const { count: totalSaidas } = await supabase
+        .from("ticket")
+        .select("id", { count: "exact", head: true })
+        .gte("dt_saida", inicioHoje)
+        .lte("dt_saida", fimHoje)
+
+      // Veículos ativos (sem saída registrada)
+      const { count: veiculosAtivos } = await supabase
+        .from("ticket")
+        .select("id", { count: "exact", head: true })
+        .is("dt_saida", null)
+
+      // Faturamento do dia
+      const { data: faturamentoData } = await supabase
+        .from("ticket")
+        .select("vl_pago")
+        .gte("dt_saida", inicioHoje)
+        .lte("dt_saida", fimHoje)
+        .not("vl_pago", "is", null)
+
+      const faturamentoDiario = faturamentoData?.reduce((total, ticket) => total + (ticket.vl_pago || 0), 0) || 0
+
+      // Tempo médio de permanência
+      const { data: tempoData } = await supabase
+        .from("ticket")
+        .select("nr_tempo_permanencia")
+        .gte("dt_saida", inicioHoje)
+        .lte("dt_saida", fimHoje)
+        .not("nr_tempo_permanencia", "is", null)
+
+      let tempoPermanenciaMedia = 0
+      if (tempoData && tempoData.length > 0) {
+        const somaTempos = tempoData.reduce((total, ticket) => total + (ticket.nr_tempo_permanencia || 0), 0)
+        tempoPermanenciaMedia = Math.floor(somaTempos / tempoData.length)
+      }
+
+      // Ticket médio
+      let ticketMedio = 0
+      if (faturamentoData && faturamentoData.length > 0) {
+        ticketMedio = faturamentoDiario / faturamentoData.length
+      }
+
+      // Buscar total de vagas da configuração
+      const { data: configVagas } = await supabase
+        .from("configuracao")
+        .select("vl_valor")
+        .eq("nm_chave", "total_vagas")
+        .single()
+
+      const totalVagas = configVagas ? Number.parseInt(configVagas.vl_valor || "100") : 100
+
+      // Ocupação atual
+      const ocupacaoAtual = {
+        total: totalVagas,
+        ocupadas: veiculosAtivos || 0,
+        disponiveis: totalVagas - (veiculosAtivos || 0),
+        percentual: Math.floor(((veiculosAtivos || 0) / totalVagas) * 100),
+      }
+
+      // Atividades recentes
+      const { data: atividadesRecentes } = await supabase
+        .from("ticket")
+        .select(`
+          *,
+          tipo_veiculo (*)
+        `)
+        .not("dt_saida", "is", null)
+        .order("dt_saida", { ascending: false })
+        .limit(5)
+
+      setDashboardData({
+        totalEntradas: totalEntradas || 0,
+        totalSaidas: totalSaidas || 0,
+        veiculosAtivos: veiculosAtivos || 0,
+        faturamentoDiario,
+        ocupacaoAtual,
+        tempoMedio: {
+          permanencia: tempoPermanenciaMedia,
+          ticketMedio,
+        },
+        atividadesRecentes: atividadesRecentes || [],
+      })
+    } catch (error) {
+      console.error("Erro ao carregar dados do dashboard:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const formatCurrency = (value: number) => {
+    return `R$ ${value.toFixed(2).replace(".", ",")}`
+  }
+
+  const formatTime = (minutes: number) => {
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return hours > 0 ? `${hours}h ${mins}min` : `${mins} min`
+  }
+
+  const formatDateTime = (dateString: string) => {
+    return new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(dateString))
+  }
+
+  const getStatusBadge = (ticket: any) => {
+    if (ticket.dt_saida) {
+      return <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">Finalizado</span>
+    } else {
+      return (
+        <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">Em andamento</span>
+      )
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-white">
+        <Sidebar isMobileMenuOpen={isMobileMenuOpen} setIsMobileMenuOpen={setIsMobileMenuOpen} />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <AppHeader title="Dashboard" showBackButton={false} />
+          <DashboardHeader setIsMobileMenuOpen={setIsMobileMenuOpen} />
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50 pb-16 md:pb-6">
+            <div className="max-w-7xl mx-auto">
+              <div className="animate-pulse">
+                <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                      <div className="h-12 bg-gray-200 rounded mb-4"></div>
+                      <div className="h-6 bg-gray-200 rounded mb-2"></div>
+                      <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-screen bg-white">
@@ -30,6 +220,68 @@ export default function Dashboard() {
             {/* Dashboard Cards */}
             <DashboardCards />
 
+            {/* Resumo do Dia */}
+            {dashboardData && (
+              <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Resumo do Dia</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Total de entradas:</span>
+                      <span className="font-medium">{dashboardData.totalEntradas}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Total de saídas:</span>
+                      <span className="font-medium">{dashboardData.totalSaidas}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Veículos ativos:</span>
+                      <span className="font-medium">{dashboardData.veiculosAtivos}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Faturamento:</span>
+                      <span className="font-medium text-green-600">
+                        {formatCurrency(dashboardData.faturamentoDiario)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Ocupação Atual</h3>
+                  <div className="mt-4 flex items-center">
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div
+                        className="bg-yellow-500 h-4 rounded-full"
+                        style={{ width: `${dashboardData.ocupacaoAtual.percentual}%` }}
+                      ></div>
+                    </div>
+                    <span className="ml-4 text-lg font-medium">{dashboardData.ocupacaoAtual.percentual}%</span>
+                  </div>
+                  <div className="mt-4 text-sm text-gray-600">
+                    <p>
+                      {dashboardData.ocupacaoAtual.ocupadas} de {dashboardData.ocupacaoAtual.total} vagas ocupadas
+                    </p>
+                    <p className="mt-1">Atualizado agora</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Tempo Médio</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Permanência:</span>
+                      <span className="font-medium">{formatTime(dashboardData.tempoMedio.permanencia)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Ticket médio:</span>
+                      <span className="font-medium">{formatCurrency(dashboardData.tempoMedio.ticketMedio)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Recent Activity Section */}
             <div className="mt-8">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Atividades Recentes</h2>
@@ -38,6 +290,7 @@ export default function Dashboard() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-gray-200">
+                        <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Ticket</th>
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Placa</th>
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Entrada</th>
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Saída</th>
@@ -46,98 +299,29 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      <tr>
-                        <td className="px-6 py-4 text-sm text-gray-900">ABC-1234</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">Hoje, 09:45</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">Hoje, 11:30</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">R$ 15,00</td>
-                        <td className="px-6 py-4 text-sm">
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                            Finalizado
-                          </span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="px-6 py-4 text-sm text-gray-900">DEF-5678</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">Hoje, 10:15</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">-</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">-</td>
-                        <td className="px-6 py-4 text-sm">
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
-                            Em andamento
-                          </span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="px-6 py-4 text-sm text-gray-900">GHI-9012</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">Hoje, 08:30</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">Hoje, 12:45</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">R$ 25,00</td>
-                        <td className="px-6 py-4 text-sm">
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                            Finalizado
-                          </span>
-                        </td>
-                      </tr>
+                      {dashboardData?.atividadesRecentes.map((ticket) => (
+                        <tr key={ticket.id}>
+                          <td className="px-6 py-4 text-sm text-gray-900">{ticket.nr_ticket}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">{ticket.nr_placa}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500">{formatDateTime(ticket.dt_entrada)}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500">
+                            {ticket.dt_saida ? formatDateTime(ticket.dt_saida) : "-"}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            {ticket.vl_pago ? formatCurrency(ticket.vl_pago) : "-"}
+                          </td>
+                          <td className="px-6 py-4 text-sm">{getStatusBadge(ticket)}</td>
+                        </tr>
+                      ))}
+                      {(!dashboardData?.atividadesRecentes || dashboardData.atividadesRecentes.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                            Nenhuma atividade recente encontrada
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
-                </div>
-              </div>
-            </div>
-
-            {/* Summary Section */}
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Resumo do Dia</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total de entradas:</span>
-                    <span className="font-medium">42</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total de saídas:</span>
-                    <span className="font-medium">38</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Veículos ativos:</span>
-                    <span className="font-medium">4</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Faturamento:</span>
-                    <span className="font-medium text-green-600">R$ 1.250,00</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Ocupação Atual</h3>
-                <div className="mt-4 flex items-center">
-                  <div className="w-full bg-gray-200 rounded-full h-4">
-                    <div className="bg-yellow-500 h-4 rounded-full" style={{ width: "65%" }}></div>
-                  </div>
-                  <span className="ml-4 text-lg font-medium">65%</span>
-                </div>
-                <div className="mt-4 text-sm text-gray-600">
-                  <p>78 de 120 vagas ocupadas</p>
-                  <p className="mt-1">Atualizado há 5 minutos</p>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Tempo Médio</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Permanência:</span>
-                    <span className="font-medium">2h 15min</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Pico de ocupação:</span>
-                    <span className="font-medium">14:00 - 16:00</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Ticket médio:</span>
-                    <span className="font-medium">R$ 18,50</span>
-                  </div>
                 </div>
               </div>
             </div>

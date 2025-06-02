@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Car } from "lucide-react"
+import type { TipoVeiculo } from "../types/supabase"
 
 // Definindo o esquema de validação
 const formSchema = z.object({
@@ -26,9 +27,10 @@ const formSchema = z.object({
 interface VehicleFormProps {
   onSubmit: (plate: string, vehicleType: string) => void
   isLoading: boolean
+  tiposVeiculo: TipoVeiculo[]
 }
 
-export function VehicleForm({ onSubmit, isLoading }: VehicleFormProps) {
+export function VehicleForm({ onSubmit, isLoading, tiposVeiculo }: VehicleFormProps) {
   // Estado local para armazenar o valor da placa
   const [plateInput, setPlateInput] = useState("")
 
@@ -56,6 +58,18 @@ export function VehicleForm({ onSubmit, isLoading }: VehicleFormProps) {
       shouldDirty: true,
       shouldTouch: true,
     })
+  }
+
+  // Função para obter o nome amigável do tipo de veículo
+  const getTipoVeiculoLabel = (nmTipo: string) => {
+    const labels: Record<string, string> = {
+      carro: "Carro",
+      moto: "Moto",
+      camionete: "Caminhonete",
+      van: "Van",
+      caminhao: "Caminhão",
+    }
+    return labels[nmTipo] || nmTipo.charAt(0).toUpperCase() + nmTipo.slice(1)
   }
 
   return (
@@ -96,9 +110,11 @@ export function VehicleForm({ onSubmit, isLoading }: VehicleFormProps) {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="carro">Carro</SelectItem>
-                  <SelectItem value="moto">Moto</SelectItem>
-                  <SelectItem value="camionete">Camionete</SelectItem>
+                  {tiposVeiculo.map((tipo) => (
+                    <SelectItem key={tipo.id} value={tipo.nm_tipo}>
+                      {getTipoVeiculoLabel(tipo.nm_tipo)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <FormMessage />
