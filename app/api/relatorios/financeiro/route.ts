@@ -21,4 +21,4 @@ export async function GET(request: Request) {
     )
     
     return NextResponse.json(relatorio)
-  } catch (error)\
+  } catch (error)
