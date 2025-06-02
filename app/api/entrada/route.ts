@@ -96,15 +96,20 @@ export async function POST(request: Request) {
     }
 
     // Registrar no histórico
-    await supabase.from("historico_operacao").insert({
-      tp_operacao: "entrada",
-      id_ticket: ticketCriado.id,
-      ds_detalhes: {
-        placa: placa.toUpperCase(),
-        tipo_veiculo: tipoVeiculoId,
-        ticket: numeroTicket,
-      },
-    })
+    try {
+      await supabase.from("historico_operacao").insert({
+        tp_operacao: "entrada",
+        id_ticket: ticketCriado.id,
+        ds_detalhes: {
+          placa: placa.toUpperCase(),
+          tipo_veiculo: tipoVeiculoId,
+          ticket: numeroTicket,
+        },
+      })
+    } catch (error) {
+      console.error("Erro ao registrar histórico:", error)
+      // Não falhar por causa do histórico
+    }
 
     return NextResponse.json({ ticket: ticketCriado })
   } catch (error) {

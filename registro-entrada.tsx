@@ -6,8 +6,7 @@ import { TicketDisplay } from "./components/ticket-display"
 import { Card, CardContent } from "@/components/ui/card"
 import { AppHeader } from "./components/app-header"
 import { QuickNav } from "./components/quick-nav"
-import { supabase } from "./lib/supabase"
-import type { TipoVeiculo } from "./types/supabase"
+import { getClientSupabase } from "./lib/supabase"
 
 export interface TicketData {
   ticketNumber: string
@@ -16,10 +15,17 @@ export interface TicketData {
   entryTime: Date
 }
 
+export interface TipoVeiculo {
+  id: number
+  nm_tipo: string
+  ds_descricao: string | null
+}
+
 export default function RegistroEntrada() {
   const [ticketData, setTicketData] = useState<TicketData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [tiposVeiculo, setTiposVeiculo] = useState<TipoVeiculo[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadTiposVeiculo()
@@ -27,137 +33,60 @@ export default function RegistroEntrada() {
 
   const loadTiposVeiculo = async () => {
     try {
+      const supabase = getClientSupabase()
       const { data, error } = await supabase.from("tipo_veiculo").select("*").order("nm_tipo")
 
       if (error) {
         console.error("Erro ao carregar tipos de veículo:", error)
+        setError("Erro ao carregar tipos de veículo")
         return
       }
 
       setTiposVeiculo(data || [])
     } catch (error) {
       console.error("Erro ao carregar tipos de veículo:", error)
-    }
-  }
-
-  const gerarNumeroTicket = async (): Promise<string> => {
-    try {
-      // Buscar o último ticket para gerar um número sequencial
-      const { data, error } = await supabase
-        .from("ticket")
-        .select("nr_ticket")
-        .order("id", { ascending: false })
-        .limit(1)
-
-      if (error) {
-        console.error("Erro ao buscar último ticket:", error)
-      }
-
-      let proximoNumero = 1
-
-      if (data && data.length > 0) {
-        const ultimoTicket = data[0].nr_ticket
-        // Extrair o número do ticket (assumindo formato T000001)
-        const match = ultimoTicket.match(/\d+/)
-        if (match) {
-          proximoNumero = Number.parseInt(match[0], 10) + 1
-        }
-      }
-
-      // Formatar com zeros à esquerda
-      return `T${proximoNumero.toString().padStart(6, "0")}`
-    } catch (error) {
-      console.error("Erro ao gerar número de ticket:", error)
-      return `T${Date.now().toString().slice(-6)}`
+      setError("Erro ao carregar tipos de veículo")
     }
   }
 
   const handleSubmit = async (plate: string, vehicleType: string) => {
     setIsLoading(true)
+    setError(null)
 
     try {
       // Encontrar o ID do tipo de veículo
       const tipoVeiculoObj = tiposVeiculo.find((tipo) => tipo.nm_tipo === vehicleType)
+
       if (!tipoVeiculoObj) {
         throw new Error("Tipo de veículo não encontrado")
       }
 
-      // Verificar se o veículo já existe
-      const { data: veiculoExistente, error: veiculoError } = await supabase
-        .from("veiculo")
-        .select("*")
-        .eq("nr_placa", plate)
-        .maybeSingle()
-
-      let idVeiculo: number | null = null
-
-      // Se o veículo não existe, criar
-      if (!veiculoExistente && !veiculoError) {
-        const { data: veiculoCriado, error: criacaoError } = await supabase
-          .from("veiculo")
-          .insert({
-            nr_placa: plate,
-            id_tipo_veiculo: tipoVeiculoObj.id,
-            fl_mensalista: false,
-          })
-          .select()
-          .single()
-
-        if (criacaoError) {
-          throw new Error("Falha ao criar veículo")
-        }
-
-        idVeiculo = veiculoCriado.id
-      } else if (veiculoExistente) {
-        idVeiculo = veiculoExistente.id
-
-        // Atualizar tipo de veículo se for diferente
-        if (veiculoExistente.id_tipo_veiculo !== tipoVeiculoObj.id) {
-          await supabase.from("veiculo").update({ id_tipo_veiculo: tipoVeiculoObj.id }).eq("id", idVeiculo)
-        }
-      }
-
-      // Gerar número de ticket
-      const numeroTicket = await gerarNumeroTicket()
-
-      // Criar ticket de entrada
-      const { data: ticketCriado, error: ticketError } = await supabase
-        .from("ticket")
-        .insert({
-          nr_ticket: numeroTicket,
-          id_veiculo: idVeiculo,
-          nr_placa: plate,
-          id_tipo_veiculo: tipoVeiculoObj.id,
-          dt_entrada: new Date().toISOString(),
-          fl_pago: false,
-        })
-        .select()
-        .single()
-
-      if (ticketError) {
-        throw new Error("Falha ao criar ticket")
-      }
-
-      // Registrar no histórico
-      await supabase.from("historico_operacao").insert({
-        tp_operacao: "entrada",
-        id_ticket: ticketCriado.id,
-        ds_detalhes: {
-          placa: plate,
-          tipo_veiculo: vehicleType,
-          ticket: numeroTicket,
+      const response = await fetch("/api/entrada", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          placa: plate,
+          tipoVeiculoId: tipoVeiculoObj.id,
+        }),
       })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erro ao registrar entrada")
+      }
 
       setTicketData({
-        ticketNumber: numeroTicket,
-        plate,
+        ticketNumber: data.ticket.nr_ticket,
+        plate: data.ticket.nr_placa,
         vehicleType,
-        entryTime: new Date(),
+        entryTime: new Date(data.ticket.dt_entrada),
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao registrar entrada:", error)
-      alert("Erro ao registrar entrada. Tente novamente.")
+      setError(error.message || "Erro ao registrar entrada")
     } finally {
       setIsLoading(false)
     }
@@ -173,6 +102,8 @@ export default function RegistroEntrada() {
             <h2 className="text-2xl font-bold text-gray-900">Registro de Entrada</h2>
             <p className="mt-2 text-gray-600">Preencha os dados do veículo para registrar a entrada</p>
           </header>
+
+          {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-600">{error}</div>}
 
           <Card className="mb-8 overflow-hidden rounded-2xl border-gray-200 shadow-sm">
             <CardContent className="p-6">
