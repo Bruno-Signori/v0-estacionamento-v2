@@ -5,7 +5,8 @@ import { AppHeader } from "./components/app-header"
 import { QuickNav } from "./components/quick-nav"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { QrCodeReader } from "./components/qr-code-reader"
-import { SearchVehicleForm } from "./components/search-vehicle-form"
+import { SearchSequenceForm } from "./components/search-sequence-form"
+import { SearchPlateForm } from "./components/search-plate-form"
 import { VehicleDetails } from "./components/vehicle-details"
 import { PaymentReceipt } from "./components/payment-receipt"
 import { Card, CardContent } from "@/components/ui/card"
@@ -51,7 +52,7 @@ export default function RegistroSaida() {
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null)
   const [paymentComplete, setPaymentComplete] = useState(false)
   const [pricingTables, setPricingTables] = useState<any[]>([])
-  const [activeTab, setActiveTab] = useState<string>("manual")
+  const [activeTab, setActiveTab] = useState<string>("sequence")
   const [qrCodeData, setQrCodeData] = useState<string | null>(null)
   const [qrCodeError, setQrCodeError] = useState<string | null>(null)
 
@@ -116,23 +117,43 @@ export default function RegistroSaida() {
     setQrCodeError(null)
 
     try {
+      console.log("Dados do QR Code recebidos:", data)
+
       // Tentar fazer o parse do QR Code como JSON
       try {
         const jsonData = JSON.parse(data)
-        if (jsonData.ticket) {
-          handleSearch(jsonData.ticket)
+        console.log("QR Code parseado:", jsonData)
+
+        // Verificar se é um QR Code do nosso sistema
+        if (jsonData.system === "parkgestor" && jsonData.ticket) {
+          console.log("QR Code válido do sistema, buscando ticket:", jsonData.ticket)
+          handleSearchByTicket(jsonData.ticket)
+          return
+        } else if (jsonData.ticket) {
+          // QR Code com ticket mas sem identificação do sistema
+          console.log("QR Code com ticket, buscando:", jsonData.ticket)
+          handleSearchByTicket(jsonData.ticket)
           return
         } else if (jsonData.plate) {
-          handleSearch(jsonData.plate)
+          // QR Code com placa
+          console.log("QR Code com placa, buscando:", jsonData.plate)
+          handleSearchByPlate(jsonData.plate)
           return
         }
       } catch (e) {
+        console.log("QR Code não é JSON válido, tratando como texto simples")
         // Se não for JSON, continuar e tratar como texto simples
       }
 
       // Se não for JSON ou não tiver campos esperados, usar o texto diretamente
-      if (data.length >= 7 || !isNaN(Number(data))) {
-        handleSearch(data)
+      if (data.length >= 3) {
+        console.log("Usando dados do QR Code como texto simples:", data)
+        // Verificar se parece um número de ticket ou placa
+        if (/^\d+$/.test(data)) {
+          handleSearchByTicket(data)
+        } else {
+          handleSearchByPlate(data)
+        }
       } else {
         setQrCodeError("QR Code inválido. O conteúdo não parece ser um ticket ou placa válida.")
       }
@@ -145,32 +166,27 @@ export default function RegistroSaida() {
   // Função para lidar com a leitura do QR Code
   const handleQRCodeScan = (data: string) => {
     if (data) {
+      console.log("QR Code escaneado:", data)
       setQrCodeData(data)
     }
   }
 
-  const handleSearch = async (searchTerm: string) => {
+  const handleSearchByTicket = async (ticketNumber: string) => {
     setSearchStatus("searching")
+    console.log("Buscando por ticket:", ticketNumber)
 
     try {
-      // Verificar se o termo de busca é um número de ticket ou uma placa
-      const isNumeroTicket = /^T?\d+$/.test(searchTerm)
-
-      let query = supabase.from("ticket").select(`
+      const { data, error } = await supabase
+        .from("ticket")
+        .select(`
           *,
           tipo_veiculo (*)
         `)
-
-      if (isNumeroTicket) {
-        // Remover 'T' se existir e buscar por número de ticket
-        const numeroLimpo = searchTerm.replace(/^T/, "")
-        query = query.or(`nr_ticket.eq.${searchTerm},nr_ticket.eq.T${numeroLimpo}`)
-      } else {
-        // Buscar por placa e apenas tickets sem saída registrada
-        query = query.eq("nr_placa", searchTerm.toUpperCase()).is("dt_saida", null)
-      }
-
-      const { data, error } = await query.order("dt_entrada", { ascending: false }).limit(1).maybeSingle()
+        .eq("nr_ticket", ticketNumber)
+        .is("dt_saida", null)
+        .order("dt_entrada", { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
       if (error) {
         console.error("Erro ao buscar ticket:", error)
@@ -179,17 +195,13 @@ export default function RegistroSaida() {
       }
 
       if (!data) {
+        console.log("Nenhum ticket encontrado para:", ticketNumber)
         setSearchStatus("not-found")
         setVehicleInfo(null)
         return
       }
 
-      // Verificar se o ticket já tem saída registrada
-      if (data.dt_saida) {
-        setQrCodeError("Este ticket já teve a saída registrada.")
-        setSearchStatus("not-found")
-        return
-      }
+      console.log("Ticket encontrado:", data)
 
       setVehicleInfo({
         id: data.id,
@@ -200,7 +212,53 @@ export default function RegistroSaida() {
       })
       setSearchStatus("found")
     } catch (error) {
-      console.error("Erro ao buscar veículo:", error)
+      console.error("Erro ao buscar veículo por ticket:", error)
+      setSearchStatus("not-found")
+    }
+  }
+
+  const handleSearchByPlate = async (plate: string) => {
+    setSearchStatus("searching")
+    console.log("Buscando por placa:", plate)
+
+    try {
+      const { data, error } = await supabase
+        .from("ticket")
+        .select(`
+          *,
+          tipo_veiculo (*)
+        `)
+        .eq("nr_placa", plate.toUpperCase())
+        .is("dt_saida", null)
+        .order("dt_entrada", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.error("Erro ao buscar ticket por placa:", error)
+        setSearchStatus("not-found")
+        return
+      }
+
+      if (!data) {
+        console.log("Nenhum ticket encontrado para placa:", plate)
+        setSearchStatus("not-found")
+        setVehicleInfo(null)
+        return
+      }
+
+      console.log("Ticket encontrado por placa:", data)
+
+      setVehicleInfo({
+        id: data.id,
+        ticketNumber: data.nr_ticket,
+        plate: data.nr_placa,
+        vehicleType: data.tipo_veiculo.nm_tipo,
+        entryTime: new Date(data.dt_entrada),
+      })
+      setSearchStatus("found")
+    } catch (error) {
+      console.error("Erro ao buscar veículo por placa:", error)
       setSearchStatus("not-found")
     }
   }
@@ -273,36 +331,51 @@ export default function RegistroSaida() {
         <div className="max-w-3xl mx-auto">
           <header className="mb-8 text-center">
             <h2 className="text-2xl font-bold text-gray-900">Registro de Saída</h2>
-            <p className="mt-2 text-gray-600">
-              Localize o veículo pela placa, número do ticket ou escaneie o QR Code para registrar a saída
-            </p>
+            <p className="mt-2 text-gray-600">Localize o veículo pelo número do ticket, placa ou escaneie o QR Code</p>
           </header>
 
           {!paymentComplete ? (
             <>
               {!vehicleInfo && (
-                <Card className="mb-8 overflow-hidden rounded-2xl border-gray-200 shadow-sm">
-                  <CardContent className="p-0">
-                    <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
-                      <TabsList className="grid grid-cols-2 w-full rounded-none">
-                        <TabsTrigger value="manual">Busca Manual</TabsTrigger>
-                        <TabsTrigger value="qrcode">Leitura via QR Code</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="manual" className="p-6">
-                        <SearchVehicleForm onSearch={handleSearch} searchStatus={searchStatus} />
-                      </TabsContent>
-                      <TabsContent value="qrcode" className="p-6">
-                        {qrCodeError && (
-                          <Alert variant="destructive" className="mb-4 bg-red-50 text-red-800 border-red-200">
-                            <AlertCircle className="h-4 w-4" />
-                            <AlertDescription>{qrCodeError}</AlertDescription>
-                          </Alert>
-                        )}
-                        <QrCodeReader onScan={handleQRCodeScan} />
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
+                <div className="space-y-6">
+                  {/* Busca por Sequência - Prioridade */}
+                  <Card className="overflow-hidden rounded-2xl border-yellow-200 shadow-sm bg-yellow-50">
+                    <CardContent className="p-6">
+                      <SearchSequenceForm onSearch={handleSearchByTicket} searchStatus={searchStatus} />
+                    </CardContent>
+                  </Card>
+
+                  {/* Separador */}
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 h-px bg-gray-300"></div>
+                    <span className="text-sm text-gray-500 font-medium">OU</span>
+                    <div className="flex-1 h-px bg-gray-300"></div>
+                  </div>
+
+                  {/* Outras opções de busca */}
+                  <Card className="overflow-hidden rounded-2xl border-gray-200 shadow-sm">
+                    <CardContent className="p-0">
+                      <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full">
+                        <TabsList className="grid grid-cols-2 w-full rounded-none">
+                          <TabsTrigger value="plate">Busca por Placa</TabsTrigger>
+                          <TabsTrigger value="qrcode">Leitura via QR Code</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="plate" className="p-6">
+                          <SearchPlateForm onSearch={handleSearchByPlate} searchStatus={searchStatus} />
+                        </TabsContent>
+                        <TabsContent value="qrcode" className="p-6">
+                          {qrCodeError && (
+                            <Alert variant="destructive" className="mb-4 bg-red-50 text-red-800 border-red-200">
+                              <AlertCircle className="h-4 w-4" />
+                              <AlertDescription>{qrCodeError}</AlertDescription>
+                            </Alert>
+                          )}
+                          <QrCodeReader onScan={handleQRCodeScan} />
+                        </TabsContent>
+                      </Tabs>
+                    </CardContent>
+                  </Card>
+                </div>
               )}
 
               {searchStatus === "found" && vehicleInfo && (
