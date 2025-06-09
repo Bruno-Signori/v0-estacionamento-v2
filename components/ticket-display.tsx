@@ -7,6 +7,7 @@ import QRCode from "react-qr-code"
 import { motion } from "framer-motion"
 import { Clock, Car, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { usePrint } from "@/hooks/use-print"
 
 interface TicketDisplayProps {
   ticketData: TicketData
@@ -14,6 +15,7 @@ interface TicketDisplayProps {
 
 export function TicketDisplay({ ticketData }: TicketDisplayProps) {
   const [mounted, setMounted] = useState(false)
+  const { printTicket, isPrinting } = usePrint()
 
   // Formatando a data e hora
   const formattedTime = new Intl.DateTimeFormat("pt-BR", {
@@ -42,6 +44,10 @@ export function TicketDisplay({ ticketData }: TicketDisplayProps) {
     version: "2.0",
     system: "parkgestor",
   })
+
+  const handlePrint = () => {
+    printTicket(ticketData)
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -94,10 +100,11 @@ export function TicketDisplay({ ticketData }: TicketDisplayProps) {
             <div className="flex w-full flex-col sm:flex-row gap-3">
               <Button
                 className="flex-1 rounded-xl bg-black text-white hover:bg-gray-800"
-                onClick={() => window.print()}
+                onClick={handlePrint}
+                disabled={isPrinting}
               >
                 <Printer className="mr-2 h-5 w-5" />
-                Imprimir Ticket
+                {isPrinting ? "Imprimindo..." : "Imprimir Ticket"}
               </Button>
               <Button
                 variant="outline"

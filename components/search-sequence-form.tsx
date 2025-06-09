@@ -14,33 +14,56 @@ interface SearchSequenceFormProps {
 }
 
 export function SearchSequenceForm({ onSearch, searchStatus }: SearchSequenceFormProps) {
+  const [prefixoInput, setPrefixoInput] = useState(obterPrefixoDia())
   const [sequencialInput, setSequencialInput] = useState("")
   const [error, setError] = useState("")
-  const prefixoDia = obterPrefixoDia()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+
+    if (!prefixoInput) {
+      setError("Digite o prefixo do dia")
+      return
+    }
 
     if (!sequencialInput) {
       setError("Digite o número sequencial")
       return
     }
 
+    if (prefixoInput.length !== 6) {
+      setError("Prefixo deve ter 6 dígitos (YYMMDD)")
+      return
+    }
+
     if (sequencialInput.length > 3) {
-      setError("Máximo 3 dígitos")
+      setError("Sequencial deve ter máximo 3 dígitos")
+      return
+    }
+
+    if (!/^\d+$/.test(prefixoInput)) {
+      setError("Prefixo deve conter apenas números")
       return
     }
 
     if (!/^\d+$/.test(sequencialInput)) {
-      setError("Apenas números são permitidos")
+      setError("Sequencial deve conter apenas números")
       return
     }
 
     // Formatar o número completo do ticket
     const sequencialFormatado = sequencialInput.padStart(3, "0")
-    const ticketCompleto = `${prefixoDia}${sequencialFormatado}`
+    const ticketCompleto = `${prefixoInput}${sequencialFormatado}`
     onSearch(ticketCompleto)
+  }
+
+  // Função para lidar com a mudança no input de prefixo
+  const handlePrefixoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Permitir apenas números e limitar a 6 dígitos
+    const value = e.target.value.replace(/\D/g, "").slice(0, 6)
+    setPrefixoInput(value)
+    setError("")
   }
 
   // Função para lidar com a mudança no input de sequencial
@@ -55,23 +78,31 @@ export function SearchSequenceForm({ onSearch, searchStatus }: SearchSequenceFor
   const isNotFound = searchStatus === "not-found"
 
   // Gerar preview do ticket completo
-  const ticketPreview = sequencialInput ? `${prefixoDia}${sequencialInput.padStart(3, "0")}` : `${prefixoDia}___`
+  const ticketPreview =
+    prefixoInput && sequencialInput
+      ? `${prefixoInput}${sequencialInput.padStart(3, "0")}`
+      : prefixoInput
+        ? `${prefixoInput}___`
+        : "_________"
 
   return (
     <div className="space-y-6">
       <div className="text-center">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Busca por Número do Ticket</h3>
-        <p className="text-sm text-gray-600">Digite apenas os 3 últimos dígitos do ticket</p>
+        <p className="text-sm text-gray-600">Digite o prefixo do dia e os 3 últimos dígitos do ticket</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="flex items-center gap-2">
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-900 mb-2">Prefixo do Dia (Automático)</label>
+            <label className="block text-sm font-medium text-gray-900 mb-2">Prefixo do Dia (YYMMDD)</label>
             <Input
-              value={prefixoDia}
-              disabled
-              className="rounded-xl border-gray-300 bg-gray-50 text-center font-mono text-lg"
+              placeholder="241208"
+              value={prefixoInput}
+              onChange={handlePrefixoChange}
+              className="rounded-xl border-gray-300 focus:border-yellow-500 focus:ring-yellow-500 text-center font-mono text-lg bg-yellow-50"
+              disabled={isSearching}
+              maxLength={6}
             />
           </div>
           <div className="flex-1">
@@ -84,9 +115,14 @@ export function SearchSequenceForm({ onSearch, searchStatus }: SearchSequenceFor
               onChange={handleSequencialChange}
               maxLength={3}
             />
-            {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
           </div>
         </div>
+
+        {error && (
+          <div className="text-center">
+            <p className="text-sm text-red-600">{error}</p>
+          </div>
+        )}
 
         {/* Preview do ticket completo */}
         <div className="text-center">
@@ -99,14 +135,14 @@ export function SearchSequenceForm({ onSearch, searchStatus }: SearchSequenceFor
         {isNotFound && (
           <Alert variant="destructive" className="bg-red-50 text-red-800 border-red-200">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>Ticket não encontrado. Verifique o número sequencial.</AlertDescription>
+            <AlertDescription>Ticket não encontrado. Verifique o prefixo e número sequencial.</AlertDescription>
           </Alert>
         )}
 
         <Button
           type="submit"
           className="w-full rounded-xl bg-yellow-500 text-black hover:bg-yellow-600 focus:ring-yellow-500"
-          disabled={isSearching || !sequencialInput}
+          disabled={isSearching || !prefixoInput || !sequencialInput}
         >
           {isSearching ? (
             <>
