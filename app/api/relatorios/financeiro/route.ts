@@ -21,4 +21,6 @@ export async function GET(request: Request) {
     )
     
     return NextResponse.json(relatorio)
-  } catch (error)
+  } catch (error) {
+    return NextResponse.json({ error: 'Erro ao gerar relatório financeiro', details: String(error) }, { status: 500 })
+  }}

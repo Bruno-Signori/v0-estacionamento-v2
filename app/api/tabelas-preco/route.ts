@@ -79,8 +79,10 @@ export async function DELETE(request: NextRequest) {
     await deleteTabelaPreco(Number(id))
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Erro ao excluir tabela de preço:", error)
-     return NextResponse.json(
-        { error: "ID da tabela de preço não fornecido" },
-        { status: 400 }
+      console.error("Erro ao excluir tabela de preço:", error)
+      return NextResponse.json(
+        { error: "Falha ao excluir tabela de preço" },
+        { status: 500 }
       )
+    }
+  }
