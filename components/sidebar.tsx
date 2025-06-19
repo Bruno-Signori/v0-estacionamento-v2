@@ -2,7 +2,19 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { LayoutDashboard, Users, Car, Settings, ChevronDown, X, LogIn, LogOut, FileText, Search } from "lucide-react"
+import {
+  LayoutDashboard,
+  Users,
+  Car,
+  Settings,
+  ChevronDown,
+  X,
+  LogIn,
+  LogOut,
+  FileText,
+  Search,
+  MapPin,
+} from "lucide-react"
 
 interface SidebarProps {
   isMobileMenuOpen: boolean
@@ -99,6 +111,17 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
                         <div className="flex items-center">
                           <Search className="mr-2 h-4 w-4" />
                           <span>Consultar Vagas</span>
+                        </div>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/patio"
+                        className="block rounded-lg px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+                      >
+                        <div className="flex items-center">
+                          <MapPin className="mr-2 h-4 w-4" />
+                          <span>Pátio</span>
                         </div>
                       </Link>
                     </li>

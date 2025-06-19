@@ -1,10 +1,10 @@
 import Link from "next/link"
 import type React from "react"
-import { LogIn, LogOut, Search, FileText } from "lucide-react"
+import { LogIn, LogOut, Search, FileText, MapPin } from "lucide-react"
 
 export function DashboardCards() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
       <ActionCard
         title="Registrar Entrada"
         description="Cadastre a entrada de um novo veículo"
@@ -24,6 +24,13 @@ export function DashboardCards() {
         description="Verifique a disponibilidade atual"
         icon={<Search className="h-6 w-6" />}
         color="bg-yellow-500"
+      />
+
+      <ActionCard
+        title="Pátio"
+        description="Visualize todos os veículos atualmente estacionados"
+        icon={<MapPin className="h-6 w-6" />}
+        color="bg-indigo-500"
       />
 
       <ActionCard
@@ -53,6 +60,8 @@ function ActionCard({ title, description, icon, color }: ActionCardProps) {
         return "/registro-saida"
       case "Consultar Vagas":
         return "/consulta"
+      case "Pátio":
+        return "/patio"
       case "Emitir Relatório":
         return "/relatorios"
       default:
