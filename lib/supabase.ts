@@ -1,36 +1,26 @@
 import { createClient } from "@supabase/supabase-js"
+import type { Database } from "@/types/supabase"
 
-// Verificar se as variáveis de ambiente estão definidas
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error("❌ Variáveis de ambiente do Supabase não encontradas!")
-  console.error("NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl ? "✅ Definida" : "❌ Não definida")
-  console.error("NEXT_PUBLIC_SUPABASE_ANON_KEY:", supabaseKey ? "✅ Definida" : "❌ Não definida")
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing Supabase environment variables")
 }
 
-// Criar cliente Supabase
-export const supabase = createClient(supabaseUrl || "", supabaseKey || "")
+// Cliente para uso no servidor
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
 
-// Função para criar cliente (para compatibilidade)
-export function createSupabaseClient() {
-  return createClient(supabaseUrl || "", supabaseKey || "")
-}
-
-// Cliente para o navegador (singleton)
-let browserSupabase: ReturnType<typeof createClient> | null = null
-
+// Cliente para uso no cliente (browser)
 export function getClientSupabase() {
-  if (typeof window === "undefined") {
-    return supabase
-  }
-
-  if (browserSupabase) return browserSupabase
-
-  browserSupabase = supabase
-  return browserSupabase
+  return createClient<Database>(supabaseUrl, supabaseAnonKey)
 }
 
-// Export default para compatibilidade
-export default supabase
+// Função para obter cliente com configurações específicas
+export function createSupabaseClient() {
+  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+    },
+  })
+}

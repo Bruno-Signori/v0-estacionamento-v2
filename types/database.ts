@@ -43,6 +43,26 @@ export interface Veiculo {
   dt_atualizacao: string
 }
 
+export interface Pessoa {
+  id: number
+  nm_pessoa: string
+  nr_cpf_cnpj: string | null
+  ds_email: string | null
+  nr_telefone: string | null
+  ds_endereco: string | null
+  nr_endereco: string | null
+  nr_cep: string | null
+  nm_bairro: string | null
+  nm_cidade: string | null
+  nm_estado: string | null
+  dt_nascimento: string | null
+  tp_pessoa: "FISICA" | "JURIDICA"
+  ds_observacoes: string | null
+  fl_ativo: boolean
+  dt_criacao: string
+  dt_atualizacao: string
+}
+
 export interface Ticket {
   id: number
   nr_ticket: string
@@ -131,4 +151,8 @@ export interface TicketCompleto extends Ticket {
   veiculo?: Veiculo
   tipo_veiculo: TipoVeiculo
   tabela_preco?: TabelaPreco
+}
+
+export interface PessoaCompleta extends Pessoa {
+  veiculos?: Veiculo[]
 }

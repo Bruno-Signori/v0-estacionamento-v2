@@ -1,48 +1,100 @@
-import { NextResponse } from "next/server"
-import { registrarSaida } from "@/lib/api/ticket"
-import { registrarOperacao } from "@/lib/api/historico"
+import { type NextRequest, NextResponse } from "next/server"
+import { supabase } from "@/lib/supabase"
+import { obterDataHoraAtualBrasil, calcularDiferencaMinutos } from "@/lib/utils/date-utils"
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { ticketId, tempoEstacionado, valorPago, tabelaPrecoId, tipoPagamento } = body
+    const { ticketId, valorPago, metodoPagamento } = body
 
-    if (!ticketId || tempoEstacionado === undefined || !valorPago || !tabelaPrecoId || !tipoPagamento) {
-      return NextResponse.json(
-        {
-          error:
-            "Todos os campos são obrigatórios: ticketId, tempoEstacionado, valorPago, tabelaPrecoId, tipoPagamento",
-        },
-        { status: 400 },
-      )
+    console.log("Dados recebidos para saída:", { ticketId, valorPago, metodoPagamento })
+
+    if (!ticketId) {
+      return NextResponse.json({ error: "ID do ticket é obrigatório" }, { status: 400 })
     }
 
-    const ticket = await registrarSaida(ticketId, {
-      dt_saida: new Date().toISOString(),
-      nr_tempo_permanencia: tempoEstacionado,
-      id_tabela_preco: tabelaPrecoId,
-      vl_pago: valorPago,
-      tp_pagamento: tipoPagamento,
-      fl_pago: true,
+    // Buscar o ticket
+    const { data: ticket, error: ticketError } = await supabase
+      .from("ticket")
+      .select(`
+        id,
+        nr_ticket,
+        nr_placa,
+        dt_entrada,
+        dt_saida,
+        id_tipo_veiculo,
+        tipo_veiculo:id_tipo_veiculo (
+          id,
+          nm_tipo,
+          vl_preco_hora
+        )
+      `)
+      .eq("id", ticketId)
+      .single()
+
+    if (ticketError || !ticket) {
+      console.error("Erro ao buscar ticket:", ticketError)
+      return NextResponse.json({ error: "Ticket não encontrado" }, { status: 404 })
+    }
+
+    if (ticket.dt_saida) {
+      return NextResponse.json({ error: "Ticket já possui saída registrada" }, { status: 409 })
+    }
+
+    // Obter data/hora atual no horário de Brasília
+    const dataSaidaBrasil = obterDataHoraAtualBrasil()
+
+    // Calcular tempo de permanência em minutos
+    const tempoMinutos = calcularDiferencaMinutos(ticket.dt_entrada, dataSaidaBrasil)
+
+    console.log("Calculando saída:", {
+      entrada: ticket.dt_entrada,
+      saida: dataSaidaBrasil,
+      tempoMinutos,
+      valorPago,
     })
 
-    // Registrar operação no histórico
-    await registrarOperacao(
-      "saida",
-      ticket.id,
-      null, // usuarioId (será implementado com autenticação)
-      {
-        placa: ticket.nr_placa,
-        ticketNumber: ticket.nr_ticket,
-        tempoEstacionado,
-        valorPago,
-        tipoPagamento,
-      },
-    )
+    // Atualizar ticket com saída
+    const { data: ticketAtualizado, error: atualizacaoError } = await supabase
+      .from("ticket")
+      .update({
+        dt_saida: dataSaidaBrasil,
+        nr_tempo_permanencia: tempoMinutos,
+        vl_pago: valorPago || null,
+        ds_metodo_pagamento: metodoPagamento || null,
+      })
+      .eq("id", ticketId)
+      .select(`
+        id,
+        nr_ticket,
+        nr_placa,
+        dt_entrada,
+        dt_saida,
+        nr_tempo_permanencia,
+        vl_pago,
+        ds_metodo_pagamento,
+        tipo_veiculo:id_tipo_veiculo (
+          id,
+          nm_tipo,
+          vl_preco_hora
+        )
+      `)
+      .single()
 
-    return NextResponse.json(ticket)
+    if (atualizacaoError) {
+      console.error("Erro ao atualizar ticket:", atualizacaoError)
+      return NextResponse.json({ error: "Erro ao registrar saída" }, { status: 500 })
+    }
+
+    console.log("Saída registrada com sucesso:", ticketAtualizado)
+
+    return NextResponse.json({
+      success: true,
+      ticket: ticketAtualizado,
+      message: "Saída registrada com sucesso",
+    })
   } catch (error) {
-    console.error("Erro ao registrar saída:", error)
-    return NextResponse.json({ error: "Erro ao registrar saída" }, { status: 500 })
+    console.error("Erro na API de saída:", error)
+    return NextResponse.json({ error: "Erro interno do servidor" }, { status: 500 })
   }
 }

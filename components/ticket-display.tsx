@@ -1,122 +1,178 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
-import type { TicketData } from "../registro-entrada"
-import QRCode from "react-qr-code"
-import { motion } from "framer-motion"
-import { Clock, Car, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { usePrint } from "@/hooks/use-print"
+import { Badge } from "@/components/ui/badge"
+import { Printer, Download, Share2, CheckCircle } from "lucide-react"
+import { formatarDataBrasileira, formatarHora } from "@/lib/utils/date-utils"
+import type { TicketData } from "@/app/registro-entrada/page"
 
 interface TicketDisplayProps {
   ticketData: TicketData
 }
 
 export function TicketDisplay({ ticketData }: TicketDisplayProps) {
-  const [mounted, setMounted] = useState(false)
-  const { printTicket, isPrinting } = usePrint()
+  const [isPrinting, setIsPrinting] = useState(false)
 
-  // Formatando a data e hora
-  const formattedTime = new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(ticketData.entryTime)
+  const handlePrint = async () => {
+    setIsPrinting(true)
+    try {
+      // Criar conteúdo para impressão
+      const printContent = `
+        ================================
+        ESTACIONAMENTO PARKGESTOR
+        ================================
+        
+        TICKET: ${ticketData.ticketNumber}
+        PLACA: ${ticketData.plate}
+        TIPO: ${ticketData.vehicleType}
+        
+        ENTRADA: ${formatarDataBrasileira(ticketData.entryTime)}
+        HORÁRIO: ${formatarHora(ticketData.entryTime)}
+        
+        ================================
+        GUARDE ESTE COMPROVANTE
+        ================================
+      `
 
-  // Mapeando o tipo de veículo para o nome completo
-  const vehicleTypeMap: Record<string, string> = {
-    carro: "Carro",
-    moto: "Moto",
-    camionete: "Caminhonete",
-    van: "Van",
-    caminhao: "Caminhão",
+      // Abrir janela de impressão
+      const printWindow = window.open("", "_blank")
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>Ticket ${ticketData.ticketNumber}</title>
+              <style>
+                body { 
+                  font-family: 'Courier New', monospace; 
+                  font-size: 12px; 
+                  margin: 20px;
+                  white-space: pre-line;
+                }
+                @media print {
+                  body { margin: 0; }
+                }
+              </style>
+            </head>
+            <body>${printContent}</body>
+          </html>
+        `)
+        printWindow.document.close()
+        printWindow.print()
+        printWindow.close()
+      }
+    } catch (error) {
+      console.error("Erro ao imprimir:", error)
+    } finally {
+      setIsPrinting(false)
+    }
   }
 
-  // Gerando o conteúdo do QR Code com dados estruturados
-  const qrCodeContent = JSON.stringify({
-    ticket: ticketData.ticketNumber,
-    plate: ticketData.plate,
-    type: ticketData.vehicleType,
-    entryTime: ticketData.entryTime.toISOString(),
-    version: "2.0",
-    system: "parkgestor",
-  })
+  const handleShare = async () => {
+    const shareData = {
+      title: `Ticket ${ticketData.ticketNumber}`,
+      text: `Placa: ${ticketData.plate}\nEntrada: ${formatarDataBrasileira(ticketData.entryTime)}`,
+    }
 
-  const handlePrint = () => {
-    printTicket(ticketData)
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData)
+      } catch (error) {
+        console.error("Erro ao compartilhar:", error)
+      }
+    } else {
+      // Fallback para navegadores que não suportam Web Share API
+      const text = `${shareData.title}\n${shareData.text}`
+      await navigator.clipboard.writeText(text)
+      alert("Dados copiados para a área de transferência!")
+    }
   }
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  const handleDownload = () => {
+    const content = `TICKET: ${ticketData.ticketNumber}
+PLACA: ${ticketData.plate}
+TIPO: ${ticketData.vehicleType}
+ENTRADA: ${formatarDataBrasileira(ticketData.entryTime)}
+HORÁRIO: ${formatarHora(ticketData.entryTime)}
 
-  if (!mounted) return null
+ESTACIONAMENTO PARKGESTOR
+Guarde este comprovante`
+
+    const blob = new Blob([content], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `ticket-${ticketData.ticketNumber}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-      <Card className="overflow-hidden rounded-2xl border-2 border-yellow-500 shadow-lg">
-        <div className="bg-yellow-500 p-4 text-center text-black">
-          <h2 className="text-2xl font-bold">Ticket Gerado com Sucesso</h2>
+    <Card className="overflow-hidden rounded-2xl border-green-200 shadow-sm bg-green-50">
+      <div className="bg-green-500 p-4 text-center text-white">
+        <div className="flex items-center justify-center space-x-2">
+          <CheckCircle className="h-6 w-6" />
+          <h3 className="text-xl font-bold">Entrada Registrada</h3>
+        </div>
+      </div>
+
+      <CardContent className="p-6">
+        <div className="text-center mb-6">
+          <div className="text-3xl font-bold text-green-600 mb-2">#{ticketData.ticketNumber}</div>
+          <Badge variant="outline" className="text-sm">
+            Ticket de Entrada
+          </Badge>
         </div>
 
-        <CardContent className="p-6">
-          <div className="flex flex-col items-center">
-            <div className="mb-4 text-center">
-              <h3 className="text-3xl font-bold text-gray-900">{ticketData.ticketNumber}</h3>
-              <div className="mt-2 flex items-center justify-center text-gray-600">
-                <Clock className="mr-2 h-4 w-4" />
-                <span>Entrada registrada às {formattedTime}</span>
-              </div>
-            </div>
+        <div className="space-y-4 mb-6">
+          <div className="flex justify-between items-center p-3 bg-white rounded-lg border">
+            <span className="text-gray-600">Placa:</span>
+            <span className="font-mono font-bold text-lg">{ticketData.plate}</span>
+          </div>
 
-            <div className="my-6 p-4 bg-white rounded-xl border border-gray-200">
-              <QRCode
-                value={qrCodeContent}
-                size={200}
-                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                viewBox={`0 0 256 256`}
-              />
-            </div>
+          <div className="flex justify-between items-center p-3 bg-white rounded-lg border">
+            <span className="text-gray-600">Tipo de Veículo:</span>
+            <span className="font-medium">{ticketData.vehicleType}</span>
+          </div>
 
-            <div className="mb-6 w-full rounded-xl bg-gray-50 p-4">
-              <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-                <span className="font-medium text-gray-600">Placa:</span>
-                <span className="font-bold text-gray-900">{ticketData.plate}</span>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <span className="font-medium text-gray-600">Tipo:</span>
-                <div className="flex items-center">
-                  <Car className="mr-2 h-4 w-4 text-gray-600" />
-                  <span className="font-bold text-gray-900">
-                    {vehicleTypeMap[ticketData.vehicleType] || ticketData.vehicleType}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex w-full flex-col sm:flex-row gap-3">
-              <Button
-                className="flex-1 rounded-xl bg-black text-white hover:bg-gray-800"
-                onClick={handlePrint}
-                disabled={isPrinting}
-              >
-                <Printer className="mr-2 h-5 w-5" />
-                {isPrinting ? "Imprimindo..." : "Imprimir Ticket"}
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50"
-                onClick={() => window.location.reload()}
-              >
-                Novo Registro
-              </Button>
+          <div className="flex justify-between items-center p-3 bg-white rounded-lg border">
+            <span className="text-gray-600">Data e Hora:</span>
+            <div className="text-right">
+              <div className="font-medium">{formatarDataBrasileira(ticketData.entryTime)}</div>
+              <div className="text-sm text-gray-500">Horário de Brasília</div>
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </motion.div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Button onClick={handlePrint} disabled={isPrinting} className="bg-blue-600 hover:bg-blue-700">
+            <Printer className="h-4 w-4 mr-2" />
+            {isPrinting ? "Imprimindo..." : "Imprimir"}
+          </Button>
+
+          <Button onClick={handleDownload} variant="outline">
+            <Download className="h-4 w-4 mr-2" />
+            Download
+          </Button>
+
+          <Button onClick={handleShare} variant="outline">
+            <Share2 className="h-4 w-4 mr-2" />
+            Compartilhar
+          </Button>
+        </div>
+
+        <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-800">
+            <strong>Importante:</strong> Guarde este comprovante para registrar a saída do veículo.
+          </p>
+          <p className="text-xs text-yellow-700 mt-1">
+            Todos os horários são registrados no fuso horário de Brasília (GMT-3).
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
