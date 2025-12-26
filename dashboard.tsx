@@ -1,20 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Sidebar } from "@/components/sidebar"
-import { DashboardCards } from "@/components/dashboard-cards"
-import { DashboardHeader } from "@/components/dashboard-header"
-import { AppHeader } from "@/components/app-header"
-import { QuickNav } from "@/components/quick-nav"
-import { supabase } from "@/lib/supabase"
-import {
-  formatarDataBrasileira,
-  formatarHora,
-  formatarTempoMinutos,
-  obterInicioDiaBrasil,
-  obterFimDiaBrasil,
-} from "@/lib/utils/date-utils"
-import type { TicketCompleto } from "@/types/supabase"
+import { Sidebar } from "./components/sidebar"
+import { DashboardCards } from "./components/dashboard-cards"
+import { DashboardHeader } from "./components/dashboard-header"
+import { AppHeader } from "./components/app-header"
+import { QuickNav } from "./components/quick-nav"
+import { supabase } from "./lib/supabase"
+import type { TicketCompleto } from "./types/supabase"
 
 interface DashboardData {
   totalEntradas: number
@@ -32,9 +25,6 @@ interface DashboardData {
     ticketMedio: number
   }
   atividadesRecentes: TicketCompleto[]
-  ticketsAtivos: TicketCompleto[]
-  ticketsMes: number
-  arrecadacaoHoje: number
 }
 
 export default function Dashboard() {
@@ -50,26 +40,24 @@ export default function Dashboard() {
     try {
       setIsLoading(true)
 
-      // Obter início e fim do dia no horário de Brasília
-      const inicioDia = obterInicioDiaBrasil()
-      const fimDia = obterFimDiaBrasil()
-
-      // Início do mês
-      const inicioMes = new Date(inicioDia.getFullYear(), inicioDia.getMonth(), 1)
+      // Data de hoje
+      const hoje = new Date()
+      const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 0, 0, 0).toISOString()
+      const fimHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59).toISOString()
 
       // Total de entradas do dia
       const { count: totalEntradas } = await supabase
         .from("ticket")
         .select("id", { count: "exact", head: true })
-        .gte("dt_entrada", inicioDia.toISOString())
-        .lte("dt_entrada", fimDia.toISOString())
+        .gte("dt_entrada", inicioHoje)
+        .lte("dt_entrada", fimHoje)
 
       // Total de saídas do dia
       const { count: totalSaidas } = await supabase
         .from("ticket")
         .select("id", { count: "exact", head: true })
-        .gte("dt_saida", inicioDia.toISOString())
-        .lte("dt_saida", fimDia.toISOString())
+        .gte("dt_saida", inicioHoje)
+        .lte("dt_saida", fimHoje)
 
       // Veículos ativos (sem saída registrada)
       const { count: veiculosAtivos } = await supabase
@@ -77,28 +65,12 @@ export default function Dashboard() {
         .select("id", { count: "exact", head: true })
         .is("dt_saida", null)
 
-      // Tickets ativos com detalhes
-      const { data: ticketsAtivos } = await supabase
-        .from("ticket")
-        .select(`
-          *,
-          tipo_veiculo (*)
-        `)
-        .is("dt_saida", null)
-        .order("dt_entrada", { ascending: false })
-
-      // Total de tickets do mês
-      const { count: ticketsMes } = await supabase
-        .from("ticket")
-        .select("id", { count: "exact", head: true })
-        .gte("dt_entrada", inicioMes.toISOString())
-
       // Faturamento do dia
       const { data: faturamentoData } = await supabase
         .from("ticket")
         .select("vl_pago")
-        .gte("dt_saida", inicioDia.toISOString())
-        .lte("dt_saida", fimDia.toISOString())
+        .gte("dt_saida", inicioHoje)
+        .lte("dt_saida", fimHoje)
         .not("vl_pago", "is", null)
 
       const faturamentoDiario = faturamentoData?.reduce((total, ticket) => total + (ticket.vl_pago || 0), 0) || 0
@@ -107,8 +79,8 @@ export default function Dashboard() {
       const { data: tempoData } = await supabase
         .from("ticket")
         .select("nr_tempo_permanencia")
-        .gte("dt_saida", inicioDia.toISOString())
-        .lte("dt_saida", fimDia.toISOString())
+        .gte("dt_saida", inicioHoje)
+        .lte("dt_saida", fimHoje)
         .not("nr_tempo_permanencia", "is", null)
 
       let tempoPermanenciaMedia = 0
@@ -162,9 +134,6 @@ export default function Dashboard() {
           ticketMedio,
         },
         atividadesRecentes: atividadesRecentes || [],
-        ticketsAtivos: ticketsAtivos || [],
-        ticketsMes: ticketsMes || 0,
-        arrecadacaoHoje: faturamentoDiario,
       })
     } catch (error) {
       console.error("Erro ao carregar dados do dashboard:", error)
@@ -174,18 +143,22 @@ export default function Dashboard() {
   }
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value)
+    return `R$ ${value.toFixed(2).replace(".", ",")}`
+  }
+
+  const formatTime = (minutes: number) => {
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return hours > 0 ? `${hours}h ${mins}min` : `${mins} min`
   }
 
   const formatDateTime = (dateString: string) => {
-    return formatarDataBrasileira(dateString)
-  }
-
-  const formatTime = (dateString: string) => {
-    return formatarHora(dateString)
+    return new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(dateString))
   }
 
   const getStatusBadge = (ticket: any) => {
@@ -227,18 +200,6 @@ export default function Dashboard() {
     )
   }
 
-  // Preparar dados para o DashboardCards
-  const dashboardCardsData = dashboardData
-    ? {
-        veiculosAtivos: dashboardData.veiculosAtivos,
-        totalArrecadado: dashboardData.faturamentoDiario,
-        ticketsMes: dashboardData.ticketsMes,
-        ocupacaoAtual: dashboardData.ocupacaoAtual.percentual,
-        ticketsAtivos: dashboardData.ticketsAtivos,
-        arrecadacaoHoje: dashboardData.arrecadacaoHoje,
-      }
-    : undefined
-
   return (
     <div className="flex h-screen bg-white">
       {/* Sidebar */}
@@ -253,13 +214,11 @@ export default function Dashboard() {
           <div className="max-w-7xl mx-auto">
             <div className="mb-8">
               <h1 className="text-3xl font-bold text-gray-900">Bem-vindo ao ParkGestor</h1>
-              <p className="mt-2 text-gray-600">
-                Gerencie seus estacionamentos de forma eficiente e prática 
-              </p>
+              <p className="mt-2 text-gray-600">Gerencie seus estacionamentos de forma eficiente e prática</p>
             </div>
 
             {/* Dashboard Cards */}
-            <DashboardCards data={dashboardCardsData} />
+            <DashboardCards />
 
             {/* Resumo do Dia */}
             {dashboardData && (
@@ -303,7 +262,7 @@ export default function Dashboard() {
                     <p>
                       {dashboardData.ocupacaoAtual.ocupadas} de {dashboardData.ocupacaoAtual.total} vagas ocupadas
                     </p>
-                    <p className="mt-1">Atualizado agora - Horário de Brasília</p>
+                    <p className="mt-1">Atualizado agora</p>
                   </div>
                 </div>
 
@@ -312,7 +271,7 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Permanência:</span>
-                      <span className="font-medium">{formatarTempoMinutos(dashboardData.tempoMedio.permanencia)}</span>
+                      <span className="font-medium">{formatTime(dashboardData.tempoMedio.permanencia)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Ticket médio:</span>
@@ -335,7 +294,6 @@ export default function Dashboard() {
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Placa</th>
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Entrada</th>
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Saída</th>
-                        <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Tempo</th>
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Valor</th>
                         <th className="px-6 py-3 text-left text-sm font-medium text-gray-500">Status</th>
                       </tr>
@@ -344,13 +302,10 @@ export default function Dashboard() {
                       {dashboardData?.atividadesRecentes.map((ticket) => (
                         <tr key={ticket.id}>
                           <td className="px-6 py-4 text-sm text-gray-900">{ticket.nr_ticket}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900 font-mono">{ticket.nr_placa}</td>
-                          <td className="px-6 py-4 text-sm text-gray-500">{formatTime(ticket.dt_entrada)}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">{ticket.nr_placa}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500">{formatDateTime(ticket.dt_entrada)}</td>
                           <td className="px-6 py-4 text-sm text-gray-500">
-                            {ticket.dt_saida ? formatTime(ticket.dt_saida) : "-"}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-500">
-                            {ticket.nr_tempo_permanencia ? formatarTempoMinutos(ticket.nr_tempo_permanencia) : "-"}
+                            {ticket.dt_saida ? formatDateTime(ticket.dt_saida) : "-"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-900">
                             {ticket.vl_pago ? formatCurrency(ticket.vl_pago) : "-"}
@@ -360,7 +315,7 @@ export default function Dashboard() {
                       ))}
                       {(!dashboardData?.atividadesRecentes || dashboardData.atividadesRecentes.length === 0) && (
                         <tr>
-                          <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                             Nenhuma atividade recente encontrada
                           </td>
                         </tr>

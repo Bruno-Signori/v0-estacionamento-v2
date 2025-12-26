@@ -1,319 +1,263 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { AppHeader } from "@/components/app-header"
-import { QuickNav } from "@/components/quick-nav"
-import { Search, Car, Clock, DollarSign, RefreshCw, AlertCircle } from "lucide-react"
-import { formatarDataBrasileira, formatarTempoMinutos, calcularDiferencaMinutos } from "@/lib/utils/date-utils"
-
-interface TicketAtivo {
-  id: number
-  nr_ticket: string
-  nr_placa: string
-  dt_entrada: string
-  dt_saida: string | null
-  vl_pago: number | null
-  id_tipo_veiculo: number | null
-  tipo_veiculo: {
-    nm_tipo: string
-  } | null
-}
-
-interface DashboardData {
-  ticketsAtivos: TicketAtivo[]
-  totalTicketsAtivos: number
-  totalReceitaHoje: number
-  totalTickets: number
-  totalVeiculos: number
-  success: boolean
-  timestamp?: string
-  error?: string
-}
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Car, Clock, Search, RefreshCw, MapPin } from "lucide-react"
+import { buscarTicketsAtivos } from "@/lib/api/ticket"
+import type { TicketCompleto } from "@/types/supabase"
+import { formatDistanceToNow } from "date-fns"
+import { ptBR } from "date-fns/locale"
 
 export default function PatioPage() {
-  const [data, setData] = useState<DashboardData>({
-    ticketsAtivos: [],
-    totalTicketsAtivos: 0,
-    totalReceitaHoje: 0,
-    totalTickets: 0,
-    totalVeiculos: 0,
-    success: false,
-  })
-  const [filteredTickets, setFilteredTickets] = useState<TicketAtivo[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
+  const [tickets, setTickets] = useState<TicketCompleto[]>([])
+  const [filteredTickets, setFilteredTickets] = useState<TicketCompleto[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [refreshing, setRefreshing] = useState(false)
 
-  const loadData = async () => {
+  const carregarTicketsAtivos = async () => {
     try {
-      setIsLoading(true)
       setError(null)
-
-      console.log("Carregando dados do pátio...")
-
-      const response = await fetch("/api/dashboard", {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-      })
-
-      console.log("Response status:", response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("Erro na resposta:", errorText)
-        throw new Error(`Erro HTTP ${response.status}: ${errorText}`)
-      }
-
-      const result = await response.json()
-      console.log("Dados recebidos:", result)
-
-      if (result.success) {
-        setData(result)
-        setFilteredTickets(result.ticketsAtivos || [])
-        console.log("Dados carregados com sucesso:", result.ticketsAtivos?.length, "tickets ativos")
-      } else {
-        throw new Error(result.error || "Erro ao carregar dados")
-      }
-    } catch (error: any) {
-      console.error("Erro ao carregar dados do pátio:", error)
-      setError(error.message || "Erro ao carregar dados")
+      const ticketsAtivos = await buscarTicketsAtivos()
+      setTickets(ticketsAtivos)
+      setFilteredTickets(ticketsAtivos)
+    } catch (err) {
+      console.error("Erro ao carregar tickets ativos:", err)
+      setError("Erro ao carregar veículos do pátio")
     } finally {
-      setIsLoading(false)
+      setLoading(false)
+      setRefreshing(false)
     }
   }
 
-  useEffect(() => {
-    loadData()
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await carregarTicketsAtivos()
+  }
 
-    // Atualizar dados a cada 30 segundos
-    const interval = setInterval(loadData, 30000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredTickets(data.ticketsAtivos)
+  const handleSearch = (term: string) => {
+    setSearchTerm(term)
+    if (!term.trim()) {
+      setFilteredTickets(tickets)
       return
     }
 
-    const filtered = data.ticketsAtivos.filter(
+    const filtered = tickets.filter(
       (ticket) =>
-        ticket.nr_placa.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.nr_ticket.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.tipo_veiculo?.nm_tipo.toLowerCase().includes(searchTerm.toLowerCase()),
+        ticket.nr_placa.toLowerCase().includes(term.toLowerCase()) ||
+        ticket.nr_ticket.includes(term) ||
+        ticket.tipo_veiculo?.nm_tipo.toLowerCase().includes(term.toLowerCase()),
     )
-
     setFilteredTickets(filtered)
-  }, [searchTerm, data.ticketsAtivos])
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value)
   }
 
-  const getTempoPermancencia = (dtEntrada: string) => {
+  const formatTempoPermanencia = (dtEntrada: string) => {
     try {
-      const minutos = calcularDiferencaMinutos(dtEntrada)
-      return formatarTempoMinutos(minutos)
+      return formatDistanceToNow(new Date(dtEntrada), {
+        addSuffix: true,
+        locale: ptBR,
+      })
     } catch {
-      return "N/A"
+      return "Tempo indisponível"
     }
   }
 
-  const getStatusBadge = (ticket: TicketAtivo) => {
-    if (ticket.dt_saida) {
-      return <Badge variant="secondary">Finalizado</Badge>
+  const getTipoVeiculoColor = (tipo: string) => {
+    switch (tipo.toLowerCase()) {
+      case "carro":
+        return "bg-blue-100 text-blue-800"
+      case "moto":
+        return "bg-green-100 text-green-800"
+      case "caminhão":
+        return "bg-orange-100 text-orange-800"
+      default:
+        return "bg-gray-100 text-gray-800"
     }
-    return <Badge variant="default">Ativo</Badge>
   }
 
-  if (error && data.ticketsAtivos.length === 0) {
+  useEffect(() => {
+    carregarTicketsAtivos()
+  }, [])
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-white flex flex-col">
-        <AppHeader title="Pátio" />
-        <div className="flex-1 p-4 md:p-8 pb-16 md:pb-8">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center py-12">
-              <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-              <div className="text-red-500 text-lg mb-4">Erro ao carregar dados do pátio</div>
-              <p className="text-gray-600 mb-4">{error}</p>
-              <Button onClick={loadData} disabled={isLoading}>
-                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-                Tentar Novamente
-              </Button>
-            </div>
-          </div>
+      <div className="container mx-auto p-6">
+        <div className="mb-6">
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-96" />
         </div>
-        <QuickNav />
+        <div className="grid gap-4">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full" />
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
-      <AppHeader title="Pátio" />
-
-      <div className="flex-1 p-4 md:p-8 pb-16 md:pb-8">
-        <div className="max-w-6xl mx-auto">
-          <header className="mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Pátio</h2>
-                <p className="text-gray-600">Veículos atualmente no estacionamento</p>
-                {data.timestamp && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Última atualização: {formatarDataBrasileira(data.timestamp)}
-                  </p>
-                )}
-              </div>
-              <Button onClick={loadData} disabled={isLoading} variant="outline" size="sm">
-                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-                Atualizar
-              </Button>
-            </div>
-          </header>
-
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Veículos Ativos</CardTitle>
-                <Car className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{data.totalTicketsAtivos}</div>
-                <p className="text-xs text-muted-foreground">No estacionamento</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Arrecadação Hoje</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(data.totalReceitaHoje)}</div>
-                <p className="text-xs text-muted-foreground">Receita do dia</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total de Tickets</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{data.totalTickets}</div>
-                <p className="text-xs text-muted-foreground">Histórico completo</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Veículos Cadastrados</CardTitle>
-                <Car className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{data.totalVeiculos}</div>
-                <p className="text-xs text-muted-foreground">No sistema</p>
-              </CardContent>
-            </Card>
+    <div className="container mx-auto p-6">
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="bg-blue-500 p-2 rounded-lg">
+            <MapPin className="h-6 w-6 text-white" />
           </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Pátio</h1>
+            <p className="text-gray-600">Veículos atualmente estacionados</p>
+          </div>
+        </div>
 
-          {/* Busca */}
-          <Card className="mb-6">
-            <CardContent className="p-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Buscar por placa, ticket ou tipo de veículo..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Lista de Veículos */}
+        {/* Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Veículos no Pátio ({filteredTickets.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading && data.ticketsAtivos.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">Carregando veículos...</p>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Car className="h-8 w-8 text-blue-500" />
+                <div>
+                  <p className="text-2xl font-bold">{filteredTickets.length}</p>
+                  <p className="text-sm text-gray-600">Veículos no pátio</p>
                 </div>
-              ) : filteredTickets.length === 0 ? (
-                <div className="text-center py-8">
-                  <Car className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">
-                    {searchTerm ? "Nenhum veículo encontrado" : "Nenhum veículo no pátio"}
-                  </p>
-                  {!searchTerm && (
-                    <p className="text-sm text-gray-500 mt-2">
-                      Os veículos aparecerão aqui quando houver entradas registradas
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredTickets.map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="font-mono text-lg font-semibold">{ticket.nr_placa}</span>
-                          {getStatusBadge(ticket)}
-                        </div>
-                        <div className="text-sm text-gray-600 space-y-1">
-                          <p>Ticket: {ticket.nr_ticket}</p>
-                          <p>Tipo: {ticket.tipo_veiculo?.nm_tipo || "N/A"}</p>
-                          <p>Entrada: {formatarDataBrasileira(ticket.dt_entrada)}</p>
-                          <p>Permanência: {getTempoPermancencia(ticket.dt_entrada)}</p>
-                          {ticket.vl_pago && <p>Valor Pago: {formatCurrency(ticket.vl_pago)}</p>}
-                        </div>
-                      </div>
-                      <div className="mt-3 sm:mt-0 sm:ml-4">
-                        <Button variant="outline" size="sm">
-                          Ver Detalhes
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              </div>
             </CardContent>
           </Card>
 
-          {error && data.ticketsAtivos.length > 0 && (
-            <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-              <div className="flex items-center">
-                <AlertCircle className="w-4 h-4 text-yellow-600 mr-2" />
-                <p className="text-yellow-800 text-sm">
-                  <strong>Aviso:</strong> {error}
-                </p>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Clock className="h-8 w-8 text-green-500" />
+                <div>
+                  <p className="text-2xl font-bold">
+                    {
+                      filteredTickets.filter((t) => {
+                        const entrada = new Date(t.dt_entrada)
+                        const agora = new Date()
+                        const horas = (agora.getTime() - entrada.getTime()) / (1000 * 60 * 60)
+                        return horas < 2
+                      }).length
+                    }
+                  </p>
+                  <p className="text-sm text-gray-600">Recentes (&lt; 2h)</p>
+                </div>
               </div>
-            </div>
-          )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Clock className="h-8 w-8 text-orange-500" />
+                <div>
+                  <p className="text-2xl font-bold">
+                    {
+                      filteredTickets.filter((t) => {
+                        const entrada = new Date(t.dt_entrada)
+                        const agora = new Date()
+                        const horas = (agora.getTime() - entrada.getTime()) / (1000 * 60 * 60)
+                        return horas >= 4
+                      }).length
+                    }
+                  </p>
+                  <p className="text-sm text-gray-600">Longa permanência (&gt; 4h)</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search and Actions */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Buscar por placa, ticket ou tipo de veículo..."
+              value={searchTerm}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Button onClick={handleRefresh} disabled={refreshing} variant="outline" className="flex items-center gap-2">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
         </div>
       </div>
 
-      <QuickNav />
+      {/* Error State */}
+      {error && (
+        <Alert className="mb-6">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Empty State */}
+      {!loading && filteredTickets.length === 0 && !error && (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <Car className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {searchTerm ? "Nenhum veículo encontrado" : "Pátio vazio"}
+            </h3>
+            <p className="text-gray-600 mb-4">
+              {searchTerm ? "Tente ajustar os termos de busca" : "Não há veículos estacionados no momento"}
+            </p>
+            {searchTerm && (
+              <Button onClick={() => handleSearch("")} variant="outline">
+                Limpar busca
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Vehicles List */}
+      {filteredTickets.length > 0 && (
+        <div className="grid gap-4">
+          {filteredTickets.map((ticket) => (
+            <Card key={ticket.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gray-100 p-3 rounded-lg">
+                      <Car className="h-6 w-6 text-gray-600" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-lg font-semibold text-gray-900">{ticket.nr_placa}</h3>
+                        <Badge className={getTipoVeiculoColor(ticket.tipo_veiculo?.nm_tipo || "")}>
+                          {ticket.tipo_veiculo?.nm_tipo}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-gray-600">
+                        <span>Ticket: {ticket.nr_ticket}</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          {formatTempoPermanencia(ticket.dt_entrada)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600">Entrada</p>
+                      <p className="font-medium">{new Date(ticket.dt_entrada).toLocaleString("pt-BR")}</p>
+                    </div>
+                    <div className="w-3 h-3 bg-green-500 rounded-full ml-4" title="Ativo" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

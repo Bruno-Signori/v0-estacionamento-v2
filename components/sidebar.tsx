@@ -14,6 +14,7 @@ import {
   FileText,
   Search,
   MapPin,
+  Camera,
 } from "lucide-react"
 
 interface SidebarProps {
@@ -83,12 +84,23 @@ export function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: SidebarProps)
                   <ul className="mt-1 space-y-1 pl-11">
                     <li>
                       <Link
+                        href="/entrada-automatica"
+                        className="block rounded-lg px-4 py-2 text-sm font-medium text-yellow-400 hover:bg-gray-800 hover:text-yellow-300"
+                      >
+                        <div className="flex items-center">
+                          <Camera className="mr-2 h-4 w-4" />
+                          <span>Entrada Automática</span>
+                        </div>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
                         href="/registro-entrada"
                         className="block rounded-lg px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
                       >
                         <div className="flex items-center">
                           <LogIn className="mr-2 h-4 w-4" />
-                          <span>Registrar Entrada</span>
+                          <span>Entrada Manual</span>
                         </div>
                       </Link>
                     </li>

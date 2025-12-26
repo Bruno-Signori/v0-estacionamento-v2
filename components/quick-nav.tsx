@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Home, LogIn, LogOut, FileText } from "lucide-react"
+import { Home, LogIn, LogOut, Camera } from "lucide-react"
 import { usePathname } from "next/navigation"
 
 export function QuickNav() {
@@ -18,11 +18,18 @@ export function QuickNav() {
           <span className="text-xs mt-1">Dashboard</span>
         </Link>
         <Link
+          href="/entrada-automatica"
+          className={`flex flex-col items-center ${pathname === "/entrada-automatica" ? "text-yellow-500" : "text-gray-600 hover:text-yellow-500"}`}
+        >
+          <Camera className="h-6 w-6" />
+          <span className="text-xs mt-1">Auto</span>
+        </Link>
+        <Link
           href="/registro-entrada"
           className={`flex flex-col items-center ${pathname === "/registro-entrada" ? "text-yellow-500" : "text-gray-600 hover:text-yellow-500"}`}
         >
           <LogIn className="h-6 w-6" />
-          <span className="text-xs mt-1">Entrada</span>
+          <span className="text-xs mt-1">Manual</span>
         </Link>
         <Link
           href="/registro-saida"
@@ -30,13 +37,6 @@ export function QuickNav() {
         >
           <LogOut className="h-6 w-6" />
           <span className="text-xs mt-1">Saída</span>
-        </Link>
-        <Link
-          href="/relatorios"
-          className={`flex flex-col items-center ${pathname === "/relatorios" ? "text-yellow-500" : "text-gray-600 hover:text-yellow-500"}`}
-        >
-          <FileText className="h-6 w-6" />
-          <span className="text-xs mt-1">Relatórios</span>
         </Link>
       </div>
     </div>
