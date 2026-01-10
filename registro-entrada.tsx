@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { VehicleForm } from "./components/vehicle-form"
-import { TicketDisplay } from "./components/ticket-display"
+import { TicketDisplay } from "@/components/ticket-display"
 import { Card, CardContent } from "@/components/ui/card"
 import { AppHeader } from "./components/app-header"
 import { QuickNav } from "./components/quick-nav"
@@ -26,6 +26,7 @@ export default function RegistroEntrada() {
   const [isLoading, setIsLoading] = useState(false)
   const [tiposVeiculo, setTiposVeiculo] = useState<TipoVeiculo[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [printComplete, setPrintComplete] = useState(false)
 
   useEffect(() => {
     loadTiposVeiculo()
@@ -52,6 +53,7 @@ export default function RegistroEntrada() {
   const handleSubmit = async (plate: string, vehicleType: string) => {
     setIsLoading(true)
     setError(null)
+    setPrintComplete(false)
 
     try {
       // Encontrar o ID do tipo de veículo
@@ -92,6 +94,10 @@ export default function RegistroEntrada() {
     }
   }
 
+  const handlePrintComplete = () => {
+    setPrintComplete(true)
+  }
+
   return (
     <div className="min-h-screen bg-white flex flex-col">
       <AppHeader title="Registro de Entrada" />
@@ -105,19 +111,24 @@ export default function RegistroEntrada() {
 
           {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-600">{error}</div>}
 
-          <Card className="mb-8 overflow-hidden rounded-2xl border-gray-200 shadow-sm">
-            <CardContent className="p-6">
-              <VehicleForm onSubmit={handleSubmit} isLoading={isLoading} tiposVeiculo={tiposVeiculo} />
+          {!ticketData && (
+            <Card className="mb-8 overflow-hidden rounded-2xl border-gray-200 shadow-sm">
+              <CardContent className="p-6">
+                <VehicleForm onSubmit={handleSubmit} isLoading={isLoading} tiposVeiculo={tiposVeiculo} />
 
-              <div className="mt-6 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
-                <p>
-                  A cobrança será realizada com base na tabela de preços configurada para o tipo de veículo selecionado.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="mt-6 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+                  <p>
+                    A cobrança será realizada com base na tabela de preços configurada para o tipo de veículo
+                    selecionado.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-          {ticketData && <TicketDisplay ticketData={ticketData} />}
+          {ticketData && (
+            <TicketDisplay ticketData={ticketData} autoPrint={true} onPrintComplete={handlePrintComplete} />
+          )}
         </div>
       </div>
 

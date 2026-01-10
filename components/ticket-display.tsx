@@ -1,21 +1,25 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import type { TicketData } from "../registro-entrada"
 import QRCode from "react-qr-code"
 import { motion } from "framer-motion"
-import { Clock, Car, Printer } from "lucide-react"
+import { Clock, Car, Printer, Check, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { usePrint } from "@/hooks/use-print"
 
 interface TicketDisplayProps {
   ticketData: TicketData
+  autoPrint?: boolean
+  onPrintComplete?: () => void
 }
 
-export function TicketDisplay({ ticketData }: TicketDisplayProps) {
+export function TicketDisplay({ ticketData, autoPrint = true, onPrintComplete }: TicketDisplayProps) {
   const [mounted, setMounted] = useState(false)
+  const [printStatus, setPrintStatus] = useState<"pending" | "printing" | "done">("pending")
   const { printTicket, isPrinting } = usePrint()
+  const hasAutoPrinted = useRef(false)
 
   // Formatando a data e hora
   const formattedTime = new Intl.DateTimeFormat("pt-BR", {
@@ -45,21 +49,53 @@ export function TicketDisplay({ ticketData }: TicketDisplayProps) {
     system: "parkgestor",
   })
 
-  const handlePrint = () => {
-    printTicket(ticketData)
+  const handlePrint = async () => {
+    setPrintStatus("printing")
+    await printTicket(ticketData)
+    setPrintStatus("done")
+    onPrintComplete?.()
   }
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
+  useEffect(() => {
+    if (mounted && autoPrint && !hasAutoPrinted.current) {
+      hasAutoPrinted.current = true
+      // Pequeno delay para garantir que o componente renderizou completamente
+      const timer = setTimeout(() => {
+        handlePrint()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [mounted, autoPrint])
+
   if (!mounted) return null
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
       <Card className="overflow-hidden rounded-2xl border-2 border-yellow-500 shadow-lg">
-        <div className="bg-yellow-500 p-4 text-center text-black">
-          <h2 className="text-2xl font-bold">Ticket Gerado com Sucesso</h2>
+        <div
+          className={`p-4 text-center ${
+            printStatus === "done" ? "bg-green-500" : printStatus === "printing" ? "bg-blue-500" : "bg-yellow-500"
+          } text-white`}
+        >
+          <h2 className="text-2xl font-bold flex items-center justify-center gap-2">
+            {printStatus === "printing" && (
+              <>
+                <Printer className="h-6 w-6 animate-pulse" />
+                Imprimindo Ticket...
+              </>
+            )}
+            {printStatus === "done" && (
+              <>
+                <Check className="h-6 w-6" />
+                Ticket Impresso!
+              </>
+            )}
+            {printStatus === "pending" && "Ticket Gerado com Sucesso"}
+          </h2>
         </div>
 
         <CardContent className="p-6">
@@ -98,21 +134,35 @@ export function TicketDisplay({ ticketData }: TicketDisplayProps) {
             </div>
 
             <div className="flex w-full flex-col sm:flex-row gap-3">
-              <Button
-                className="flex-1 rounded-xl bg-black text-white hover:bg-gray-800"
-                onClick={handlePrint}
-                disabled={isPrinting}
-              >
-                <Printer className="mr-2 h-5 w-5" />
-                {isPrinting ? "Imprimindo..." : "Imprimir Ticket"}
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50"
-                onClick={() => window.location.reload()}
-              >
-                Novo Registro
-              </Button>
+              {printStatus === "done" ? (
+                <>
+                  <Button
+                    variant="outline"
+                    className="flex-1 rounded-xl border-gray-300 text-gray-700 hover:bg-gray-50 bg-transparent"
+                    onClick={handlePrint}
+                    disabled={isPrinting}
+                  >
+                    <RotateCcw className="mr-2 h-5 w-5" />
+                    Reimprimir
+                  </Button>
+                  <Button
+                    className="flex-1 rounded-xl bg-green-600 text-white hover:bg-green-700"
+                    onClick={() => window.location.reload()}
+                  >
+                    <Car className="mr-2 h-5 w-5" />
+                    Novo Veículo
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  className="flex-1 rounded-xl bg-black text-white hover:bg-gray-800"
+                  onClick={handlePrint}
+                  disabled={isPrinting || printStatus === "printing"}
+                >
+                  <Printer className="mr-2 h-5 w-5" />
+                  {isPrinting || printStatus === "printing" ? "Imprimindo..." : "Imprimir Ticket"}
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>

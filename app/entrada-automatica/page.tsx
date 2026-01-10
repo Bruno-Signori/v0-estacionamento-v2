@@ -5,9 +5,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { AppHeader } from "@/components/app-header"
 import { QuickNav } from "@/components/quick-nav"
-import { Camera, CameraOff, Car, Check, X, RefreshCw, Volume2, VolumeX, Loader2, ScanLine } from "lucide-react"
-import { TicketDisplay } from "@/components/ticket-display"
+import { Camera, CameraOff, Car, Check, X, RefreshCw, Volume2, VolumeX, Loader2, ScanLine, Printer } from "lucide-react"
 import { createWorker, type Worker } from "tesseract.js"
+import { usePrint } from "@/hooks/use-print"
 
 interface VeiculoDetectado {
   placa: string
@@ -17,13 +17,6 @@ interface VeiculoDetectado {
   tipoVeiculo?: string
   tipoVeiculoId?: number
   confianca: number
-}
-
-interface TicketData {
-  ticketNumber: string
-  plate: string
-  vehicleType: string
-  entryTime: Date
 }
 
 const PADROES_PLACA = {
@@ -36,7 +29,6 @@ function extrairPlacas(texto: string): string[] {
   const palavras = textoLimpo.split(/\s+/)
   const placas: string[] = []
 
-  // Procurar por sequências de 7 caracteres que podem ser placas
   for (const palavra of palavras) {
     const limpa = palavra.replace(/\s/g, "")
     if (limpa.length === 7) {
@@ -46,7 +38,6 @@ function extrairPlacas(texto: string): string[] {
     }
   }
 
-  // Também procurar no texto completo por padrões
   const textoSemEspaco = textoLimpo.replace(/\s/g, "")
   for (let i = 0; i <= textoSemEspaco.length - 7; i++) {
     const possivel = textoSemEspaco.substring(i, i + 7)
@@ -79,7 +70,6 @@ export default function EntradaAutomaticaPage() {
   const [processando, setProcessando] = useState(false)
   const [veiculoDetectado, setVeiculoDetectado] = useState<VeiculoDetectado | null>(null)
   const [mostrarConfirmacao, setMostrarConfirmacao] = useState(false)
-  const [ticketData, setTicketData] = useState<TicketData | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [somAtivo, setSomAtivo] = useState(true)
   const [ultimaPlacaDetectada, setUltimaPlacaDetectada] = useState<string | null>(null)
@@ -91,6 +81,10 @@ export default function EntradaAutomaticaPage() {
   const [statusOcr, setStatusOcr] = useState("")
   const [ultimoTextoDetectado, setUltimoTextoDetectado] = useState("")
   const [tentativas, setTentativas] = useState(0)
+  const [etapaAtual, setEtapaAtual] = useState<"aguardando" | "registrando" | "imprimindo" | "concluido">("aguardando")
+  const [mensagemStatus, setMensagemStatus] = useState("")
+
+  const { printTicketAuto, isPrinting } = usePrint()
 
   useEffect(() => {
     const initWorker = async () => {
@@ -106,10 +100,9 @@ export default function EntradaAutomaticaPage() {
           },
         })
 
-        // Configurar parâmetros para melhor detecção de placas
         await worker.setParameters({
           tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-          tessedit_pageseg_mode: "7", // Single text line
+          tessedit_pageseg_mode: "7",
         })
 
         workerRef.current = worker
@@ -133,7 +126,6 @@ export default function EntradaAutomaticaPage() {
     }
   }, [])
 
-  // Carregar tipos de veículo
   useEffect(() => {
     fetch("/api/tipos-veiculo")
       .then((res) => res.json())
@@ -141,9 +133,8 @@ export default function EntradaAutomaticaPage() {
       .catch((err) => console.error("Erro ao carregar tipos:", err))
   }, [])
 
-  // Tocar som de sucesso
   const tocarSom = useCallback(
-    (tipo: "sucesso" | "erro") => {
+    (tipo: "sucesso" | "erro" | "impressao") => {
       if (!somAtivo) return
 
       try {
@@ -157,15 +148,20 @@ export default function EntradaAutomaticaPage() {
         if (tipo === "sucesso") {
           oscillator.frequency.setValueAtTime(880, audioContext.currentTime)
           oscillator.frequency.setValueAtTime(1100, audioContext.currentTime + 0.1)
+        } else if (tipo === "impressao") {
+          // Som diferente para impressão
+          oscillator.frequency.setValueAtTime(660, audioContext.currentTime)
+          oscillator.frequency.setValueAtTime(880, audioContext.currentTime + 0.15)
+          oscillator.frequency.setValueAtTime(1100, audioContext.currentTime + 0.3)
         } else {
           oscillator.frequency.setValueAtTime(300, audioContext.currentTime)
         }
 
         gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4)
 
         oscillator.start(audioContext.currentTime)
-        oscillator.stop(audioContext.currentTime + 0.3)
+        oscillator.stop(audioContext.currentTime + 0.4)
       } catch (e) {
         console.error("Erro ao tocar som:", e)
       }
@@ -173,7 +169,6 @@ export default function EntradaAutomaticaPage() {
     [somAtivo],
   )
 
-  // Iniciar câmera
   const iniciarCamera = async () => {
     try {
       setErro(null)
@@ -194,6 +189,7 @@ export default function EntradaAutomaticaPage() {
 
       setCameraAtiva(true)
       setTentativas(0)
+      setEtapaAtual("aguardando")
     } catch (error: any) {
       console.error("Erro ao acessar câmera:", error)
       setCameraDisponivel(false)
@@ -201,7 +197,6 @@ export default function EntradaAutomaticaPage() {
     }
   }
 
-  // Parar câmera
   const pararCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop())
@@ -217,21 +212,16 @@ export default function EntradaAutomaticaPage() {
     setVeiculoDetectado(null)
     setMostrarConfirmacao(false)
     setUltimoTextoDetectado("")
+    setEtapaAtual("aguardando")
   }
 
   const preprocessarImagem = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     const imageData = ctx.getImageData(0, 0, width, height)
     const data = imageData.data
 
-    // Converter para escala de cinza e aumentar contraste
     for (let i = 0; i < data.length; i += 4) {
-      // Escala de cinza
       const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
-
-      // Aumentar contraste
       const contraste = (gray - 128) * 1.5 + 128
-
-      // Binarização adaptativa
       const threshold = 127
       const valor = contraste > threshold ? 255 : 0
 
@@ -251,7 +241,8 @@ export default function EntradaAutomaticaPage() {
       processando ||
       mostrarConfirmacao ||
       !workerRef.current ||
-      !ocrPronto
+      !ocrPronto ||
+      etapaAtual !== "aguardando"
     )
       return
 
@@ -263,12 +254,10 @@ export default function EntradaAutomaticaPage() {
 
     if (!ctx || !processCtx) return
 
-    // Capturar frame completo
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     ctx.drawImage(video, 0, 0)
 
-    // Extrair apenas a região da placa (centro da imagem)
     const plateRegion = {
       x: video.videoWidth * 0.15,
       y: video.videoHeight * 0.35,
@@ -291,30 +280,25 @@ export default function EntradaAutomaticaPage() {
       plateRegion.height,
     )
 
-    // Pré-processar para melhorar OCR
     preprocessarImagem(processCtx, processCanvas.width, processCanvas.height)
 
     setProcessando(true)
     setTentativas((prev) => prev + 1)
 
     try {
-      // Executar OCR com Tesseract
       const { data } = await workerRef.current.recognize(processCanvas)
 
       const textoDetectado = data.text.trim()
       setUltimoTextoDetectado(textoDetectado)
 
-      // Extrair possíveis placas do texto
       const placasEncontradas = extrairPlacas(textoDetectado)
 
       if (placasEncontradas.length > 0) {
         const placaDetectada = placasEncontradas[0]
 
-        // Verificar se é diferente da última placa detectada
         if (placaDetectada !== ultimaPlacaDetectada) {
           setUltimaPlacaDetectada(placaDetectada)
 
-          // Buscar informações do veículo
           const infoResponse = await fetch(`/api/consultar-veiculo?placa=${placaDetectada}`)
           const infoData = await infoResponse.json()
 
@@ -338,14 +322,13 @@ export default function EntradaAutomaticaPage() {
     } finally {
       setProcessando(false)
     }
-  }, [processando, mostrarConfirmacao, ultimaPlacaDetectada, tiposVeiculo, tocarSom, ocrPronto])
+  }, [processando, mostrarConfirmacao, ultimaPlacaDetectada, tiposVeiculo, tocarSom, ocrPronto, etapaAtual])
 
-  // Iniciar detecção contínua
   useEffect(() => {
-    if (cameraAtiva && ocrPronto && !mostrarConfirmacao && !ticketData) {
+    if (cameraAtiva && ocrPronto && !mostrarConfirmacao && etapaAtual === "aguardando") {
       intervalRef.current = setInterval(() => {
         capturarEProcessar()
-      }, 2000) // A cada 2 segundos
+      }, 2000)
 
       return () => {
         if (intervalRef.current) {
@@ -353,14 +336,15 @@ export default function EntradaAutomaticaPage() {
         }
       }
     }
-  }, [cameraAtiva, ocrPronto, mostrarConfirmacao, ticketData, capturarEProcessar])
+  }, [cameraAtiva, ocrPronto, mostrarConfirmacao, etapaAtual, capturarEProcessar])
 
-  // Confirmar entrada
   const confirmarEntrada = async () => {
     if (!veiculoDetectado) return
 
     setRegistrando(true)
     setErro(null)
+    setEtapaAtual("registrando")
+    setMensagemStatus("Registrando entrada...")
 
     try {
       const response = await fetch("/api/entrada", {
@@ -381,39 +365,58 @@ export default function EntradaAutomaticaPage() {
         throw new Error(data.error || "Erro ao registrar entrada")
       }
 
-      setTicketData({
+      // Entrada registrada com sucesso
+      setEtapaAtual("imprimindo")
+      setMensagemStatus("Imprimindo ticket...")
+      tocarSom("impressao")
+
+      // Preparar dados do ticket
+      const ticketData = {
         ticketNumber: data.ticket.nr_ticket,
         plate: data.ticket.nr_placa,
         vehicleType: veiculoDetectado.tipoVeiculo || "Carro",
         entryTime: new Date(data.ticket.dt_entrada),
-      })
+        marca: veiculoDetectado.marca,
+        modelo: veiculoDetectado.modelo,
+        cor: veiculoDetectado.cor,
+      }
 
-      tocarSom("sucesso")
+      // Fechar modal de confirmação imediatamente
       setMostrarConfirmacao(false)
-      setVeiculoDetectado(null)
 
-      // Após 5 segundos, limpar ticket e continuar escaneando
+      // Imprimir automaticamente
+      await printTicketAuto(ticketData)
+
+      // Após impressão, mostrar sucesso brevemente e voltar para câmera
+      setEtapaAtual("concluido")
+      setMensagemStatus(`Entrada ${ticketData.ticketNumber} registrada!`)
+      tocarSom("sucesso")
+
+      // Após 2 segundos, resetar para próximo veículo
       setTimeout(() => {
-        setTicketData(null)
+        setVeiculoDetectado(null)
         setUltimaPlacaDetectada(null)
         setTentativas(0)
-      }, 5000)
+        setEtapaAtual("aguardando")
+        setMensagemStatus("")
+      }, 2000)
     } catch (error: any) {
       setErro(error.message)
       tocarSom("erro")
+      setEtapaAtual("aguardando")
+      setMensagemStatus("")
     } finally {
       setRegistrando(false)
     }
   }
 
-  // Cancelar detecção
   const cancelarDeteccao = () => {
     setMostrarConfirmacao(false)
     setVeiculoDetectado(null)
     setUltimaPlacaDetectada(null)
+    setEtapaAtual("aguardando")
   }
 
-  // Cleanup
   useEffect(() => {
     return () => {
       pararCamera()
@@ -426,13 +429,11 @@ export default function EntradaAutomaticaPage() {
 
       <div className="flex-1 p-4 md:p-8 pb-20 md:pb-8">
         <div className="max-w-4xl mx-auto">
-          {/* Header */}
           <header className="mb-6 text-center">
             <h2 className="text-2xl font-bold text-gray-900">Entrada Automática</h2>
             <p className="mt-1 text-gray-600">Posicione a placa do veículo na área indicada</p>
           </header>
 
-          {/* Status do OCR */}
           {carregandoOcr && (
             <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 flex items-center gap-3">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -450,10 +451,25 @@ export default function EntradaAutomaticaPage() {
             </div>
           )}
 
-          {/* Área da Câmera */}
+          {etapaAtual !== "aguardando" && mensagemStatus && (
+            <div
+              className={`mb-4 p-4 rounded-lg flex items-center gap-3 ${
+                etapaAtual === "registrando"
+                  ? "bg-blue-50 border border-blue-200 text-blue-700"
+                  : etapaAtual === "imprimindo"
+                    ? "bg-yellow-50 border border-yellow-200 text-yellow-700"
+                    : "bg-green-50 border border-green-200 text-green-700"
+              }`}
+            >
+              {etapaAtual === "registrando" && <Loader2 className="h-5 w-5 animate-spin" />}
+              {etapaAtual === "imprimindo" && <Printer className="h-5 w-5 animate-pulse" />}
+              {etapaAtual === "concluido" && <Check className="h-5 w-5" />}
+              <span className="font-medium">{mensagemStatus}</span>
+            </div>
+          )}
+
           <Card className="mb-6 overflow-hidden rounded-2xl border-gray-200 shadow-lg">
             <CardContent className="p-0 relative">
-              {/* Video Preview */}
               <div className="relative aspect-video bg-gray-900 flex items-center justify-center">
                 <video
                   ref={videoRef}
@@ -475,13 +491,10 @@ export default function EntradaAutomaticaPage() {
                   </div>
                 )}
 
-                {/* Overlay de área de detecção */}
                 {cameraAtiva && (
                   <div className="absolute inset-0 pointer-events-none">
-                    {/* Área escurecida ao redor */}
                     <div className="absolute inset-0 bg-black/40" />
 
-                    {/* Área de detecção da placa */}
                     <div
                       className="absolute top-[35%] left-[15%] w-[70%] h-[30%] bg-transparent border-4 border-yellow-400 rounded-lg"
                       style={{ boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)" }}
@@ -490,13 +503,11 @@ export default function EntradaAutomaticaPage() {
                         POSICIONE A PLACA AQUI
                       </div>
 
-                      {/* Cantos decorativos */}
                       <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-yellow-400 rounded-tl-lg" />
                       <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-yellow-400 rounded-tr-lg" />
                       <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-yellow-400 rounded-bl-lg" />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-yellow-400 rounded-br-lg" />
 
-                      {/* Linha de scan animada */}
                       {processando && (
                         <div className="absolute inset-0 overflow-hidden">
                           <div
@@ -509,9 +520,7 @@ export default function EntradaAutomaticaPage() {
                   </div>
                 )}
 
-                {/* Indicadores no canto superior */}
                 <div className="absolute top-4 left-4 right-4 flex justify-between items-start">
-                  {/* Status */}
                   <div className="flex flex-col gap-2">
                     {ocrPronto && cameraAtiva && (
                       <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs flex items-center gap-2">
@@ -526,7 +535,6 @@ export default function EntradaAutomaticaPage() {
                     )}
                   </div>
 
-                  {/* Indicador de processamento */}
                   {processando && (
                     <div className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm flex items-center gap-2">
                       <ScanLine className="h-4 w-4 animate-pulse" />
@@ -535,7 +543,6 @@ export default function EntradaAutomaticaPage() {
                   )}
                 </div>
 
-                {/* Texto detectado (debug) */}
                 {ultimoTextoDetectado && cameraAtiva && (
                   <div className="absolute bottom-4 left-4 right-4">
                     <div className="bg-black/70 text-white px-3 py-2 rounded-lg text-xs font-mono max-h-16 overflow-auto">
@@ -546,13 +553,12 @@ export default function EntradaAutomaticaPage() {
                 )}
               </div>
 
-              {/* Controles da câmera */}
               <div className="p-4 bg-gray-100 flex items-center justify-between">
                 <Button
                   onClick={cameraAtiva ? pararCamera : iniciarCamera}
                   variant={cameraAtiva ? "destructive" : "default"}
                   className="gap-2"
-                  disabled={!cameraDisponivel || carregandoOcr}
+                  disabled={!cameraDisponivel || carregandoOcr || etapaAtual !== "aguardando"}
                 >
                   {cameraAtiva ? (
                     <>
@@ -587,7 +593,7 @@ export default function EntradaAutomaticaPage() {
                       <Car className="h-8 w-8 text-green-600" />
                     </div>
                     <h3 className="text-xl font-bold text-gray-900">Veículo Detectado!</h3>
-                    <p className="text-gray-600 mt-1">Confirme os dados para registrar entrada</p>
+                    <p className="text-gray-600 mt-1">Confirme para registrar e imprimir</p>
                   </div>
 
                   <div className="bg-gray-50 rounded-xl p-4 mb-6 space-y-3">
@@ -636,7 +642,7 @@ export default function EntradaAutomaticaPage() {
                       variant="outline"
                       className="flex-1 gap-2 bg-transparent"
                       onClick={cancelarDeteccao}
-                      disabled={registrando}
+                      disabled={registrando || isPrinting}
                     >
                       <X className="h-4 w-4" />
                       Cancelar
@@ -644,26 +650,37 @@ export default function EntradaAutomaticaPage() {
                     <Button
                       className="flex-1 gap-2 bg-green-600 hover:bg-green-700"
                       onClick={confirmarEntrada}
-                      disabled={registrando}
+                      disabled={registrando || isPrinting}
                     >
-                      {registrando ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                      Confirmar Entrada
+                      {registrando ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Registrando...
+                        </>
+                      ) : isPrinting ? (
+                        <>
+                          <Printer className="h-4 w-4 animate-pulse" />
+                          Imprimindo...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4" />
+                          Confirmar e Imprimir
+                        </>
+                      )}
                     </Button>
                   </div>
+
+                  <p className="text-xs text-center text-gray-500 mt-3">
+                    O ticket será impresso automaticamente após confirmar
+                  </p>
                 </CardContent>
               </Card>
             </div>
           )}
 
-          {/* Ticket Gerado */}
-          {ticketData && (
-            <div className="animate-in slide-in-from-bottom duration-300">
-              <TicketDisplay ticketData={ticketData} />
-            </div>
-          )}
-
           {/* Instruções */}
-          {!ticketData && !mostrarConfirmacao && (
+          {etapaAtual === "aguardando" && !mostrarConfirmacao && (
             <Card className="rounded-xl border-gray-200">
               <CardContent className="p-6">
                 <h3 className="font-semibold text-gray-900 mb-4">Como funciona:</h3>
@@ -684,25 +701,27 @@ export default function EntradaAutomaticaPage() {
                     <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-bold">
                       3
                     </span>
-                    <span>Posicione a placa dentro da área amarela (boa iluminação ajuda!)</span>
+                    <span>Posicione a placa dentro da área amarela</span>
                   </li>
                   <li className="flex gap-3">
                     <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-bold">
                       4
                     </span>
-                    <span>O sistema detectará automaticamente a placa brasileira</span>
+                    <span>O sistema detectará automaticamente a placa</span>
                   </li>
                   <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-bold">
+                    <span className="flex-shrink-0 w-6 h-6 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-sm font-bold">
                       5
                     </span>
-                    <span>Confirme os dados no pop-up para registrar a entrada</span>
+                    <span>
+                      <strong>Confirme e o ticket será impresso automaticamente!</strong>
+                    </span>
                   </li>
                 </ol>
 
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                  <strong>Dica:</strong> Para melhor reconhecimento, mantenha a placa bem iluminada, centralizada na
-                  área amarela e evite reflexos. Placas padrão Mercosul (ABC1D23) e antigas (ABC-1234) são suportadas.
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                  <strong>Fluxo simplificado:</strong> Ao confirmar a entrada, o ticket é gerado e enviado diretamente
+                  para impressão. Após imprimir, o sistema volta automaticamente para escanear o próximo veículo.
                 </div>
               </CardContent>
             </Card>
@@ -710,7 +729,6 @@ export default function EntradaAutomaticaPage() {
         </div>
       </div>
 
-      {/* CSS para animação de scan */}
       <style jsx>{`
         @keyframes scanline {
           0% { transform: translateY(0); }
