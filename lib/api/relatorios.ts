@@ -300,3 +300,5 @@ export async function gerarRelatorioOcupacao(
     throw error
   }
 }
+
+export const getRelatorioFinanceiro = gerarRelatorioFinanceiro

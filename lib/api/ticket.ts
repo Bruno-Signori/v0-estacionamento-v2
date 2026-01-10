@@ -226,6 +226,9 @@ export async function buscarTicket(termo: string): Promise<TicketCompleto | null
   }
 }
 
+// Alias para buscarTicket
+export const getTicketByPlacaOrNumero = buscarTicket
+
 // Registrar saída de veículo
 export async function registrarSaida(
   idTicket: number,
@@ -322,6 +325,9 @@ export async function buscarTicketsAtivos(): Promise<TicketCompleto[]> {
     throw error
   }
 }
+
+// Alias para buscarTicketsAtivos
+export const getTicketsAtivos = buscarTicketsAtivos
 
 // Buscar tickets recentes (com saída registrada)
 export async function buscarTicketsRecentes(limite = 10): Promise<TicketCompleto[]> {

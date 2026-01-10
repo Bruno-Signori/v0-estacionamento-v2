@@ -70,3 +70,5 @@ export async function buscarHistoricoPorTipo(tipoOperacao: string, limite = 20):
     return []
   }
 }
+
+export const registrarOperacao = registrarHistorico
