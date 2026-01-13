@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Home, ChevronLeft, Car, LogIn, LogOut, Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { usePathname } from "next/navigation"
+import { VersionBadge } from "@/components/version-badge"
 
 interface AppHeaderProps {
   title: string
@@ -40,6 +41,8 @@ export function AppHeader({ title, showBackButton = true }: AppHeaderProps) {
 
           {/* Ações e navegação */}
           <div className="flex items-center space-x-2">
+            <VersionBadge />
+
             {!isAutoEntryPage && (
               <Button
                 variant="outline"
