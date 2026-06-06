@@ -10,12 +10,23 @@ if (!supabaseUrl || !supabaseKey) {
   console.error("NEXT_PUBLIC_SUPABASE_ANON_KEY:", supabaseKey ? "✅ Definida" : "❌ Não definida")
 }
 
+const isValidUrl = (url: string) => {
+  return url && (url.startsWith("http://") || url.startsWith("https://"));
+};
+
 // Criar cliente Supabase
-export const supabase = createClient(supabaseUrl || "", supabaseKey || "")
+export const supabase = isValidUrl(supabaseUrl || "")
+  ? createClient(supabaseUrl!, supabaseKey || "")
+  : new Proxy({}, {
+      get: (target, prop) => {
+        // Return a mock function that resolves to empty data/error for queries
+        return () => Promise.resolve({ data: null, error: new Error("Supabase URL not configured") });
+      }
+    }) as any;
 
 // Função para criar cliente (para compatibilidade)
 export function createSupabaseClient() {
-  return createClient(supabaseUrl || "", supabaseKey || "")
+  return supabase;
 }
 
 // Cliente para o navegador (singleton)

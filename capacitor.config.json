@@ -1,0 +1,6 @@
+{
+  "appId": "com.parkgestor.app",
+  "appName": "ParkGestor",
+  "webDir": "out",
+  "bundledWebRuntime": false
+}
